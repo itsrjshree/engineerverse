@@ -10,6 +10,9 @@ export function securityHeaders(req, res, next) {
   // Prevent clickjacking in outside iframes (allow same-origin or preview container)
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
 
+  // Allow OAuth popups (Google, GitHub, etc.) to communicate window.closed and message back without COOP block
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+
   // XSS Auditor
   res.setHeader('X-XSS-Protection', '1; mode=block');
 

@@ -112,10 +112,10 @@ router.post('/', submissionRateLimiter, (req, res) => {
     category: category.trim(),
     affectedUsers: affectedUsers?.trim() || 'General Public',
     description: description.trim(),
-    status: 'pending', // Strictly enters moderation queue
+    status: 'approved', // Immediately visible with community attribution
     supporterCount: 1,
-    submittedBy: submittedBy?.trim() || 'Anonymous Engineer',
-    tags: Array.isArray(tags) ? tags : ['Community'],
+    submittedBy: submittedBy?.trim() || 'Community Engineer',
+    tags: Array.isArray(tags) && tags.length > 0 ? tags : [category.trim(), 'Community'],
     createdAt: new Date().toISOString(),
   };
 

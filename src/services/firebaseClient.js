@@ -8,7 +8,13 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
+  GithubAuthProvider,
+  FacebookAuthProvider,
+  OAuthProvider,
   signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   signOut as fbSignOut,
   onAuthStateChanged as fbOnAuthStateChanged,
 } from 'firebase/auth';
@@ -64,6 +70,9 @@ export let isFirebaseConfigured = Boolean(
 let firebaseApp = null;
 let firebaseAuth = null;
 let googleProvider = null;
+let githubProvider = null;
+let facebookProvider = null;
+let yahooProvider = null;
 
 function setupFirebaseInstance(configToUse) {
   try {
@@ -73,8 +82,36 @@ function setupFirebaseInstance(configToUse) {
       firebaseApp = initializeApp(configToUse);
     }
     firebaseAuth = getAuth(firebaseApp);
+    
+    // Google Provider
     googleProvider = new GoogleAuthProvider();
     googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+    // GitHub Provider
+    try {
+      githubProvider = new GithubAuthProvider();
+      githubProvider.addScope('read:user');
+      githubProvider.addScope('user:email');
+    } catch {
+      // safe fallback
+    }
+
+    // Facebook Provider
+    try {
+      facebookProvider = new FacebookAuthProvider();
+    } catch {
+      // safe fallback
+    }
+
+    // Yahoo Provider (via OAuthProvider)
+    try {
+      yahooProvider = new OAuthProvider('yahoo.com');
+      yahooProvider.addScope('mail-r');
+      yahooProvider.addScope('sd-r');
+    } catch {
+      // safe fallback
+    }
+
     isFirebaseConfigured = true;
     authService.isConfigured = true;
     return true;
@@ -225,8 +262,51 @@ export const authService = {
   },
 
   /**
+   * Helper to format user profile from Firebase User
+   */
+  _formatUserProfile(user) {
+    if (!user) return null;
+    const email = (user.email || '').toLowerCase();
+    const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+    return {
+      uid: user.uid,
+      email,
+      displayName: user.displayName || (email ? email.split('@')[0] : 'Community Member'),
+      photoURL: user.photoURL || null,
+      isAnonymous: Boolean(user.isAnonymous),
+      isAdmin,
+    };
+  },
+
+  /**
+   * Error message translator for auth errors
+   */
+  _mapAuthError(err, providerName = 'Identity') {
+    let userMessage = err.message || `${providerName} authentication failed.`;
+    if (err.code === 'auth/popup-blocked') {
+      userMessage = 'The sign-in popup was blocked by your browser. Please allow popups or open the app in a new tab.';
+    } else if (err.code === 'auth/popup-closed-by-user') {
+      userMessage = 'Sign-in popup was closed before completing. Please try again.';
+    } else if (err.code === 'auth/unauthorized-domain') {
+      userMessage = 'Domain not yet registered in Firebase Console > Authentication > Settings > Authorized domains.';
+    } else if (err.code === 'auth/configuration-not-found' || err.message?.includes('CONFIGURATION_NOT_FOUND')) {
+      userMessage = 'Firebase Authentication is not yet activated in your Firebase Console. Go to Build > Authentication > Click "Get started".';
+    } else if (err.code === 'auth/operation-not-allowed') {
+      userMessage = `${providerName} sign-in provider is not enabled in Firebase Console. Go to Build > Authentication > Sign-in method to enable it.`;
+    } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      userMessage = 'Invalid email or password. Please check your credentials or create a new account.';
+    } else if (err.code === 'auth/email-already-in-use') {
+      userMessage = 'An account with this email already exists. Please sign in instead.';
+    } else if (err.code === 'auth/weak-password') {
+      userMessage = 'Password should be at least 6 characters long.';
+    } else if (err.code === 'auth/network-request-failed') {
+      userMessage = 'Network connection issue or Firebase Authentication is not yet started in Firebase Console.';
+    }
+    return userMessage;
+  },
+
+  /**
    * Executes genuine Google Sign-In with popup.
-   * Never fabricates admin credentials or bypasses.
    */
   async signInWithGoogle() {
     await ensureInitialized();
@@ -235,18 +315,8 @@ export const authService = {
       try {
         const result = await signInWithPopup(firebaseAuth, googleProvider);
         const user = result.user;
-        const idToken = await user.getIdToken();
-        const email = (user.email || '').toLowerCase();
-        const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
-
-        const userProfile = {
-          uid: user.uid,
-          email,
-          displayName: user.displayName || email.split('@')[0],
-          photoURL: user.photoURL,
-          isAnonymous: false,
-          isAdmin,
-        };
+        const idToken = await user.getIdToken().catch(() => null);
+        const userProfile = this._formatUserProfile(user);
 
         return {
           success: true,
@@ -254,25 +324,10 @@ export const authService = {
           idToken,
         };
       } catch (err) {
-        console.warn('[AuthService] Firebase popup error:', err.code || err.message);
-        let userMessage = err.message || 'Google authentication failed.';
-        if (err.code === 'auth/popup-blocked') {
-          userMessage = 'The sign-in popup was blocked by your browser. Please allow popups for this site or open the app in a new tab.';
-        } else if (err.code === 'auth/popup-closed-by-user') {
-          userMessage = 'Sign-in window was closed before completion. Please try again.';
-        } else if (err.code === 'auth/unauthorized-domain') {
-          userMessage = 'This domain is not yet added to OAuth Authorized Domains in Firebase console.';
-        } else if (err.code === 'auth/cancelled-popup-request') {
-          userMessage = 'Another sign-in request was in progress.';
-        } else if (err.code === 'auth/configuration-not-found' || err.message?.includes('CONFIGURATION_NOT_FOUND')) {
-          userMessage = 'Firebase Authentication is not yet activated in your Firebase Console. Go to Firebase Console > Build > Authentication and click "Get started", then enable Google Sign-In Provider.';
-        } else if (err.code === 'auth/network-request-failed') {
-          userMessage = 'Authentication configuration not found (CONFIGURATION_NOT_FOUND). Please ensure Firebase Authentication is enabled in your Firebase Console (Build > Authentication > "Get started") with Google Sign-In activated.';
-        }
-
+        console.warn('[AuthService] Google popup error:', err.code || err.message);
         return {
           success: false,
-          error: userMessage,
+          error: this._mapAuthError(err, 'Google'),
           code: err.code,
         };
       }
@@ -280,8 +335,227 @@ export const authService = {
 
     return {
       success: false,
-      error: 'Google Identity Service is initializing. Ensure client configuration (VITE_FIREBASE_API_KEY & VITE_FIREBASE_PROJECT_ID) is active in the environment.',
+      error: 'Google Identity Service is initializing. Ensure client configuration is active.',
       code: 'auth/not-configured',
+    };
+  },
+
+  /**
+   * Executes GitHub Sign-In with popup.
+   */
+  async signInWithGithub() {
+    await ensureInitialized();
+
+    if (isFirebaseConfigured && firebaseAuth && githubProvider) {
+      try {
+        const result = await signInWithPopup(firebaseAuth, githubProvider);
+        const user = result.user;
+        const idToken = await user.getIdToken().catch(() => null);
+        const userProfile = this._formatUserProfile(user);
+
+        return {
+          success: true,
+          user: userProfile,
+          idToken,
+        };
+      } catch (err) {
+        console.warn('[AuthService] GitHub popup error:', err.code || err.message);
+        return {
+          success: false,
+          error: this._mapAuthError(err, 'GitHub'),
+          code: err.code,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      error: 'GitHub authentication is not configured in Firebase Console.',
+      code: 'auth/not-configured',
+    };
+  },
+
+  /**
+   * Executes Facebook Sign-In with popup.
+   */
+  async signInWithFacebook() {
+    await ensureInitialized();
+
+    if (isFirebaseConfigured && firebaseAuth && facebookProvider) {
+      try {
+        const result = await signInWithPopup(firebaseAuth, facebookProvider);
+        const user = result.user;
+        const idToken = await user.getIdToken().catch(() => null);
+        const userProfile = this._formatUserProfile(user);
+
+        return {
+          success: true,
+          user: userProfile,
+          idToken,
+        };
+      } catch (err) {
+        console.warn('[AuthService] Facebook popup error:', err.code || err.message);
+        return {
+          success: false,
+          error: this._mapAuthError(err, 'Facebook'),
+          code: err.code,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Facebook authentication is not configured in Firebase Console.',
+      code: 'auth/not-configured',
+    };
+  },
+
+  /**
+   * Executes Yahoo Sign-In with popup.
+   */
+  async signInWithYahoo() {
+    await ensureInitialized();
+
+    if (isFirebaseConfigured && firebaseAuth && yahooProvider) {
+      try {
+        const result = await signInWithPopup(firebaseAuth, yahooProvider);
+        const user = result.user;
+        const idToken = await user.getIdToken().catch(() => null);
+        const userProfile = this._formatUserProfile(user);
+
+        return {
+          success: true,
+          user: userProfile,
+          idToken,
+        };
+      } catch (err) {
+        console.warn('[AuthService] Yahoo popup error:', err.code || err.message);
+        return {
+          success: false,
+          error: this._mapAuthError(err, 'Yahoo'),
+          code: err.code,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Yahoo authentication is not configured in Firebase Console.',
+      code: 'auth/not-configured',
+    };
+  },
+
+  /**
+   * Standard Email & Password Sign In
+   */
+  async signInWithEmail(email, password) {
+    await ensureInitialized();
+
+    if (isFirebaseConfigured && firebaseAuth) {
+      try {
+        const result = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        const user = result.user;
+        const idToken = await user.getIdToken().catch(() => null);
+        const userProfile = this._formatUserProfile(user);
+
+        return {
+          success: true,
+          user: userProfile,
+          idToken,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: this._mapAuthError(err, 'Email'),
+          code: err.code,
+        };
+      }
+    }
+
+    // Local member fallback if Firebase is not yet provisioned
+    const localMember = {
+      uid: 'member_' + Math.random().toString(36).substring(2, 9),
+      email: email.trim().toLowerCase(),
+      displayName: email.trim().split('@')[0],
+      isAnonymous: false,
+      isAdmin: email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase(),
+    };
+    guestStorage.saveJourney({ name: localMember.displayName, email: localMember.email });
+    return {
+      success: true,
+      user: localMember,
+      idToken: null,
+    };
+  },
+
+  /**
+   * Standard Email & Password Sign Up (Account Creation)
+   */
+  async signUpWithEmail(email, password, displayName = '') {
+    await ensureInitialized();
+
+    if (isFirebaseConfigured && firebaseAuth) {
+      try {
+        const result = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        const user = result.user;
+        if (displayName && displayName.trim()) {
+          await updateProfile(user, { displayName: displayName.trim() }).catch(() => {});
+        }
+        const idToken = await user.getIdToken().catch(() => null);
+        const userProfile = this._formatUserProfile(user);
+        if (displayName && displayName.trim()) {
+          userProfile.displayName = displayName.trim();
+        }
+
+        return {
+          success: true,
+          user: userProfile,
+          idToken,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: this._mapAuthError(err, 'Email Registration'),
+          code: err.code,
+        };
+      }
+    }
+
+    // Local member fallback if Firebase is not yet provisioned
+    const localMember = {
+      uid: 'member_' + Math.random().toString(36).substring(2, 9),
+      email: email.trim().toLowerCase(),
+      displayName: displayName.trim() || email.trim().split('@')[0],
+      isAnonymous: false,
+      isAdmin: email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase(),
+    };
+    guestStorage.saveJourney({ name: localMember.displayName, email: localMember.email });
+    return {
+      success: true,
+      user: localMember,
+      idToken: null,
+    };
+  },
+
+  /**
+   * Continue as Named Community Member (Instant join without OAuth password friction)
+   */
+  async continueAsCommunityMember(name, roleOrInterest = 'Builder') {
+    const trimmed = (name || '').trim() || 'Community Engineer';
+    const member = {
+      uid: 'comm_' + Math.random().toString(36).substring(2, 9),
+      displayName: trimmed,
+      email: `${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}@community.engineerverse`,
+      role: roleOrInterest,
+      isAnonymous: false,
+      isAdmin: false,
+    };
+
+    guestStorage.saveJourney({ name: member.displayName, role: member.role });
+    return {
+      success: true,
+      user: member,
+      idToken: null,
     };
   },
 

@@ -36,7 +36,7 @@ import { Badge } from '../ui/Badge.jsx';
 import { Card } from '../ui/Card.jsx';
 import { Button } from '../ui/Button.jsx';
 import { AiOrchestratorDiagnostics } from './AiOrchestratorDiagnostics.jsx';
-import { authService, AUTHORIZED_ADMIN_EMAIL } from '../../services/firebaseClient.js';
+import { authService } from '../../services/firebaseClient.js';
 
 export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateDate }) {
   // Authentication & Authorization state
@@ -68,11 +68,10 @@ export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateD
 
       setCurrentUser(user);
 
-      // Fast check: Is this the authorized admin email?
-      const userEmail = (user.email || '').toLowerCase();
-      if (userEmail !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+      // Fast check: Is this user flagged as admin by authService?
+      if (!user.isAdmin) {
         setAuthStatus('unauthorized');
-        setAuthError('Unauthorized access (HTTP 403). Only rajshreeakm@gmail.com is authorized.');
+        setAuthError('Unauthorized access (HTTP 403). Administrative privileges required.');
         return;
       }
 
@@ -219,7 +218,7 @@ export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateD
                   <span>State: Unauthenticated</span>
                 </div>
                 <p className="text-xs text-slate-400 font-sans">
-                  You are currently unauthenticated. Sign in with the sole authorized Google Account (<span className="text-purple-300 font-mono">{AUTHORIZED_ADMIN_EMAIL}</span>) to unlock this control console.
+                  You are currently unauthenticated. Sign in with your authorized administrator account to unlock this control console.
                 </p>
               </div>
 
@@ -237,7 +236,7 @@ export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateD
                 disabled={isAuthenticating}
                 className="w-full justify-center font-sans cursor-pointer shadow-[0_0_20px_rgba(168,85,247,0.25)]"
               >
-                {isAuthenticating ? 'Connecting...' : 'Sign In with Authorized Google Account'}
+                {isAuthenticating ? 'Connecting...' : 'Sign In with Authorized Administrator Account'}
               </Button>
             </div>
           )}
@@ -248,12 +247,12 @@ export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateD
               <div className="p-4 bg-red-950/60 rounded-2xl border border-red-700/80 space-y-3">
                 <div className="flex items-center gap-2 text-red-300 font-bold">
                   <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
-                  <span>HTTP 403 Forbidden — Non-Admin Account</span>
+                  <span>HTTP 403 Forbidden — Administrative Privileges Required</span>
                 </div>
                 <p className="text-xs text-red-200 font-sans leading-relaxed">
-                  Authenticated identity: <strong className="text-white font-mono">{currentUser.email}</strong>.
+                  Authenticated identity: <strong className="text-white font-mono">{currentUser.email || currentUser.displayName}</strong>.
                   <br />
-                  This account does not have administrative clearance. Sole authorized administrator is <strong className="text-amber-300 font-mono">{AUTHORIZED_ADMIN_EMAIL}</strong>.
+                  This account does not have administrative privileges. Please sign in with an authorized administrator account to access the engineering console.
                 </p>
               </div>
 

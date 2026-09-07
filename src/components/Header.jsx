@@ -54,28 +54,43 @@ export function Header({ activeSection, onNavigate, campaignState }) {
           <button
             type="button"
             onClick={() => handleNavClick('hub')}
-            className="flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 rounded-lg cursor-pointer"
+            className="focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 rounded-full cursor-pointer group"
+            title="ENGINEERVERSE Hub"
           >
-            {/* Circular avatar badge */}
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-400 p-[1.5px] shrink-0 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
-              <div className="w-full h-full rounded-full bg-[#070714] flex items-center justify-center text-white font-bold text-sm tracking-wider">
-                RJ
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  ENGINEERVERSE
-                </span>
-                <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800/40">
-                  {campaignState?.edition || new Date().getFullYear()}
-                </span>
-              </div>
-              <div className="text-[11px] text-purple-300/60 hidden sm:block">
-                Shree Labs × Pritee AI
-              </div>
-            </div>
+            {/* Direct circular logo image without artificial box wrappers */}
+            <img
+              src="https://3d-port-folio-git-main-rajshrees-projects.vercel.app/assets/logo-b1463779.svg"
+              alt="Shree Labs Logo"
+              referrerPolicy="no-referrer"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover shrink-0 transition-transform duration-200 group-hover:scale-105"
+            />
           </button>
+          
+          <div className="flex flex-col justify-center">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleNavClick('hub')}
+                className="text-base sm:text-lg font-bold text-white tracking-tight hover:text-purple-200 transition-colors cursor-pointer text-left"
+              >
+                ENGINEERVERSE
+              </button>
+              <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800/40">
+                {campaignState?.edition || new Date().getFullYear()}
+              </span>
+            </div>
+            <div className="text-[11px] text-purple-300/80 hidden sm:block">
+              <a
+                href="https://rjshree.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-purple-100 hover:underline transition-colors inline-flex items-center gap-1"
+                title="Visit Shree Labs (rjshree.com)"
+              >
+                <span>Shree Labs × Pritee AI</span>
+              </a>
+            </div>
+          </div>
         </div>
 
         {/* Desktop Nav Links */}
