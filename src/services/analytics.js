@@ -4,6 +4,7 @@
  */
 
 import { ANALYTICS_EVENTS } from '../config/analyticsEvents.js';
+import { getApiUrl } from '../config/api.js';
 
 class AnalyticsTracker {
   constructor() {
@@ -62,13 +63,14 @@ class AnalyticsTracker {
         const jsonPayload = JSON.stringify(payload);
         let dispatched = false;
 
+        const endpoint = getApiUrl('/api/analytics/event');
         if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
           const blob = new Blob([jsonPayload], { type: 'application/json' });
-          dispatched = navigator.sendBeacon('/api/analytics/event', blob);
+          dispatched = navigator.sendBeacon(endpoint, blob);
         }
 
         if (!dispatched && typeof fetch === 'function') {
-          fetch('/api/analytics/event', {
+          fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: jsonPayload,

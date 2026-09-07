@@ -4,6 +4,8 @@
  * Privileged Cloudinary API secret is strictly isolated on the server.
  */
 
+import { getApiUrl } from '../config/api.js';
+
 export const MEDIA_TYPES = {
   IDENTITY_CARD: 'identity_card',
   PLEDGE_CERTIFICATE: 'pledge_certificate',
@@ -37,7 +39,7 @@ export function buildOptimizedImageUrl(publicId, { width = 800, format = 'auto',
 export async function uploadMediaWithSignature(file, mediaType = MEDIA_TYPES.PROBLEM_ATTACHMENT) {
   try {
     // 1. Request signature from backend
-    const signRes = await fetch('/api/media/signature', {
+    const signRes = await fetch(getApiUrl('/api/media/signature'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mediaType, filename: file.name }),

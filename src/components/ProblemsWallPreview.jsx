@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { analytics } from '../services/analytics.js';
 import { ANALYTICS_EVENTS } from '../config/analyticsEvents.js';
+import { getApiUrl } from '../config/api.js';
 import { authService } from '../services/firebaseClient.js';
 import { AuthModal } from './auth/AuthModal.jsx';
 
@@ -138,7 +139,7 @@ export function ProblemsWallPreview() {
     let isMounted = true;
     async function loadServerProblems() {
       try {
-        const res = await fetch('/api/problems');
+        const res = await fetch(getApiUrl('/api/problems'));
         if (!res.ok) return;
         const data = await res.json();
         if (data.success && Array.isArray(data.problems) && data.problems.length > 0) {
@@ -190,7 +191,7 @@ export function ProblemsWallPreview() {
 
     // Notify backend
     try {
-      await fetch(`/api/problems/${id}/support`, { method: 'POST' });
+      await fetch(getApiUrl(`/api/problems/${id}/support`), { method: 'POST' });
     } catch {
       // offline fallback
     }
@@ -240,7 +241,7 @@ export function ProblemsWallPreview() {
 
     // Post to API server
     try {
-      await fetch('/api/problems', {
+      await fetch(getApiUrl('/api/problems'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -5,6 +5,7 @@
  */
 
 import { authService } from './firebaseClient.js';
+import { getApiUrl } from '../config/api.js';
 
 export const MENTOR_MODES = {
   STUDENT: {
@@ -45,7 +46,7 @@ export const PRITEE_SUGGESTED_QUESTIONS = [
 
 export async function askPritee({ question, mode = 'engineer', context = {} }) {
   try {
-    const res = await fetch('/api/pritee/chat', {
+    const res = await fetch(getApiUrl('/api/pritee/chat'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, mode, context }),
@@ -88,7 +89,7 @@ export async function fetchAiDiagnostics(overrideToken) {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const res = await fetch('/api/pritee/diagnostics', { headers });
+  const res = await fetch(getApiUrl('/api/pritee/diagnostics'), { headers });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.error || `Failed to fetch AI diagnostics (${res.status})`);

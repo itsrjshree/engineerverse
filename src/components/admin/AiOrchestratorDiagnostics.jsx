@@ -22,6 +22,7 @@ import { Card } from '../ui/Card.jsx';
 import { Badge } from '../ui/Badge.jsx';
 import { Button } from '../ui/Button.jsx';
 import { fetchAiDiagnostics } from '../../services/priteeClient.js';
+import { getApiUrl } from '../../config/api.js';
 
 export function AiOrchestratorDiagnostics() {
   const [diagnostics, setDiagnostics] = useState(null);
@@ -54,7 +55,7 @@ export function AiOrchestratorDiagnostics() {
   const handleTriggerDiscovery = async () => {
     try {
       setRefreshing(true);
-      await fetch('/api/pritee/models/discover', { method: 'POST' });
+      await fetch(getApiUrl('/api/pritee/models/discover'), { method: 'POST' });
       await loadDiagnostics();
     } catch (err) {
       setError('Discovery trigger failed: ' + err.message);
@@ -68,7 +69,7 @@ export function AiOrchestratorDiagnostics() {
     setTestResult(null);
 
     try {
-      const res = await fetch('/api/pritee/chat', {
+      const res = await fetch(getApiUrl('/api/pritee/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: testPrompt, mode: testMode }),

@@ -18,6 +18,7 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged as fbOnAuthStateChanged,
 } from 'firebase/auth';
+import { getApiUrl } from '../config/api.js';
 
 export const AUTHORIZED_ADMIN_EMAIL = 'rajshreeakm@gmail.com';
 
@@ -133,7 +134,7 @@ async function ensureInitialized() {
 
   initPromise = (async () => {
     try {
-      const res = await fetch('/api/auth/client-config');
+      const res = await fetch(getApiUrl('/api/auth/client-config'));
       if (!res.ok) return false;
       const data = await res.json();
       if (data.success && data.configured && data.config?.apiKey) {
@@ -621,7 +622,7 @@ export const authService = {
     }
 
     try {
-      const res = await fetch('/api/admin/verify-session', {
+      const res = await fetch(getApiUrl('/api/admin/verify-session'), {
         headers: {
           Authorization: `Bearer ${activeToken}`,
         },
