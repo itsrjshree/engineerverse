@@ -1,0 +1,6 @@
+{
+  "name": "ENGINEERVERSE",
+  "description": "An evergreen interactive engineering experience by Shree Labs × Pritee AI. Discover the Engineer Within You. Engineer What's Next.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg-cosmic: #050510;
+    --color-bg-surface-1: #09091b;
+    --color-bg-surface-2: #0f0f26;
+    --color-bg-surface-3: #161638;
+    --color-accent-purple: #a855f7;
+    --color-accent-violet: #9333ea;
+    --color-accent-glow: rgba(168, 85, 247, 0.25);
+    --color-border-subtle: rgba(168, 85, 247, 0.18);
+    --color-border-card: rgba(255, 255, 255, 0.08);
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background-color: #050510;
+    color: #f8fafc;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+    width: 100%;
+    min-height: 100%;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+/* Custom scrollbar for deep dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #050510;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e1b4b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #312e81;
+}
+
+/* Prevent horizontal overflow across all containers */
+.no-horizontal-overflow {
+  max-width: 100vw;
+  overflow-x: clip;
+}
+
+/* Background atmospheric wave & glow elements */
+.cosmic-radial-glow {
+  background: radial-gradient(circle at 50% 0%, rgba(147, 51, 234, 0.18) 0%, rgba(99, 102, 241, 0.08) 40%, rgba(5, 5, 16, 0) 70%);
+}
+
+.cosmic-card-glow {
+  box-shadow: 0 0 25px -5px rgba(168, 85, 247, 0.08);
+}
+
+.cosmic-card-glow-hover:hover {
+  box-shadow: 0 0 35px -2px rgba(168, 85, 247, 0.22);
+}
+
