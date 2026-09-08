@@ -33,7 +33,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { authService, AUTHORIZED_ADMIN_EMAIL } from '../../services/firebaseClient.js';
-import { apiFetch } from '../../config/api.js';
+import { apiFetch, resolveAvatarUrl } from '../../config/api.js';
 
 export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin, onOpenProfile }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -255,9 +255,9 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
         <div className="p-5 sm:p-6 border-b border-purple-950/60 bg-gradient-to-r from-purple-950/40 via-[#0a0a20] to-[#070718] flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 overflow-hidden">
-              {currentUser?.photoURL ? (
+              {resolveAvatarUrl(currentUser?.photoURL) ? (
                 <img
-                  src={currentUser.photoURL}
+                  src={resolveAvatarUrl(currentUser?.photoURL)}
                   alt={currentUser.displayName || 'Profile'}
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"

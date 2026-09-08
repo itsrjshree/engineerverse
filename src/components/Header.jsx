@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { Badge } from './ui/Badge.jsx';
 import { authService, AUTHORIZED_ADMIN_EMAIL } from '../services/firebaseClient.js';
+import { resolveAvatarUrl } from '../config/api.js';
 import { AuthModal } from './auth/AuthModal.jsx';
 
 export function Header({ activeSection, onNavigate, campaignState, currentUser: propUser }) {
@@ -46,6 +47,8 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
   const mobileDrawerRef = useRef(null);
   const hamburgerButtonRef = useRef(null);
 
+  const avatarSrc = resolveAvatarUrl(currentUser?.photoURL);
+
   // Sync propUser whenever it changes
   useEffect(() => {
     if (propUser !== undefined) {
@@ -53,10 +56,10 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
     }
   }, [propUser]);
 
-  // Reset avatar error when photoURL changes
+  // Reset avatar error when photo changes
   useEffect(() => {
     setAvatarError(false);
-  }, [currentUser?.photoURL]);
+  }, [avatarSrc]);
 
   // Subscribe to auth state and ensure instant profile hydration
   useEffect(() => {
@@ -208,9 +211,9 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
             <div className="space-y-3">
               <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-purple-950/40 border border-purple-800/40 shadow-inner">
                 <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-purple-700 via-purple-600 to-indigo-600 flex items-center justify-center text-sm font-black text-white uppercase shadow-md shrink-0 border border-purple-400/40 overflow-hidden">
-                  {currentUser.photoURL && !avatarError ? (
+                  {avatarSrc && !avatarError ? (
                     <img
-                      src={currentUser.photoURL}
+                      src={avatarSrc}
                       alt={currentUser.displayName || 'Profile'}
                       referrerPolicy="no-referrer"
                       onError={() => setAvatarError(true)}
@@ -432,9 +435,9 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
                 title={`Profile: ${currentUser.displayName || currentUser.email} (Click for details & features)`}
               >
                 <div className="w-full h-full rounded-full bg-[#08081c] flex items-center justify-center text-xs sm:text-sm font-black text-white uppercase tracking-wider overflow-hidden">
-                  {currentUser.photoURL && !avatarError ? (
+                  {avatarSrc && !avatarError ? (
                     <img
-                      src={currentUser.photoURL}
+                      src={avatarSrc}
                       alt={currentUser.displayName || 'Profile'}
                       referrerPolicy="no-referrer"
                       onError={() => setAvatarError(true)}
@@ -455,9 +458,9 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
                   <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-900/40 space-y-2">
                     <div className="flex items-center gap-3">
                       <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-purple-700 to-indigo-600 border border-purple-400/50 flex items-center justify-center text-sm font-black text-white uppercase shadow-md shrink-0 overflow-hidden">
-                        {currentUser.photoURL && !avatarError ? (
+                        {avatarSrc && !avatarError ? (
                           <img
-                            src={currentUser.photoURL}
+                            src={avatarSrc}
                             alt={currentUser.displayName || 'Profile'}
                             referrerPolicy="no-referrer"
                             onError={() => setAvatarError(true)}

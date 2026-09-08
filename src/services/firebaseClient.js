@@ -19,7 +19,7 @@ import {
   deleteUser as fbDeleteUser,
   onAuthStateChanged as fbOnAuthStateChanged,
 } from 'firebase/auth';
-import { getApiUrl } from '../config/api.js';
+import { getApiUrl, resolveAvatarUrl } from '../config/api.js';
 
 export const AUTHORIZED_ADMIN_EMAIL = 'rajshreeakm@gmail.com';
 
@@ -366,22 +366,25 @@ export const authService = {
       }
     }
 
-    const resolvedPhotoURL = serverUser?.photoURL !== undefined
+    const rawPhoto = serverUser?.photoURL !== undefined
       ? serverUser.photoURL
       : (photoURL !== undefined ? photoURL : (currentUser.photoURL || null));
 
-    // 2. Update Firebase Auth profile with clean, short URL (never exceeds 2048 chars)
+    // Resolve into absolute, reachable URL across all hosts (e.g. rjshree.com, vercel, cloud run)
+    const resolvedPhotoURL = resolveAvatarUrl(rawPhoto) || rawPhoto || null;
+
+    // 2. Update Firebase Auth profile with clean, absolute URL (never exceeds 2048 chars)
     if (firebaseAuth?.currentUser) {
       const fbUpdates = {};
       if (displayName && displayName.trim()) fbUpdates.displayName = displayName.trim();
       if (resolvedPhotoURL !== undefined) {
-        if (!resolvedPhotoURL || resolvedPhotoURL.startsWith('http') || resolvedPhotoURL.startsWith('/')) {
+        if (!resolvedPhotoURL || resolvedPhotoURL.startsWith('http://') || resolvedPhotoURL.startsWith('https://')) {
           fbUpdates.photoURL = resolvedPhotoURL;
         }
       }
       if (Object.keys(fbUpdates).length > 0) {
         await updateProfile(firebaseAuth.currentUser, fbUpdates).catch((err) => {
-          console.warn('[AuthService] Firebase updateProfile error:', err.message);
+          console.warn('[AuthService] Firebase updateProfile notice:', err.message);
         });
       }
     }
@@ -490,8 +493,11 @@ export const authService = {
         if (data.authenticated && data.user) {
           const email = (data.user.email || '').toLowerCase();
           const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+          const rawPhoto = data.user.photoURL;
+          const photoURL = resolveAvatarUrl(rawPhoto) || rawPhoto || null;
           const finalUser = {
             ...data.user,
+            photoURL,
             isAdmin,
             connectionCredits: data.user.connectionCredits ?? 5,
           };
@@ -515,11 +521,12 @@ export const authService = {
     if (!user) return null;
     const email = (user.email || '').toLowerCase();
     const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+    const rawPhoto = user.photoURL || null;
     return {
       uid: user.uid,
       email,
       displayName: user.displayName || (email ? email.split('@')[0] : 'Community Member'),
-      photoURL: user.photoURL || null,
+      photoURL: resolveAvatarUrl(rawPhoto) || rawPhoto || null,
       isAnonymous: Boolean(user.isAnonymous),
       isAdmin,
       role: isAdmin ? 'admin' : 'member',
@@ -869,11 +876,14 @@ export const authService = {
             ? (localStorage.getItem(`ev_user_photo_${user.uid || email}`) || cached.photoURL || null)
             : null;
 
+          const rawPhoto = user.photoURL || storedPhoto || null;
+          const resolvedPhoto = resolveAvatarUrl(rawPhoto) || rawPhoto || null;
+
           const profile = {
             uid: user.uid,
             email,
             displayName: user.displayName || cached.displayName || (email ? email.split('@')[0] : 'Community Member'),
-            photoURL: user.photoURL || storedPhoto || null,
+            photoURL: resolvedPhoto,
             isAnonymous: false,
             isAdmin,
             role: isAdmin ? 'admin' : 'member',

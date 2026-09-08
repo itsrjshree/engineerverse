@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { AUTHORIZED_ADMIN_EMAIL } from '../middleware/auth.js';
 import { problemsStore } from './problemsStore.js';
+import { uploadImageToCloudinary, deleteImageFromCloudinary } from './cloudinaryService.js';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server/data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -321,7 +322,7 @@ class UsersStore {
   /**
    * Updates user profile with immediate cleanup of previous avatar files
    */
-  updateUserProfile(uid, updates = {}) {
+  async updateUserProfile(uid, updates = {}) {
     let user = this.usersById.get(uid);
     if (!user) {
       // Fallback lookup if uid is an email
@@ -349,41 +350,66 @@ class UsersStore {
       const newPhoto = updates.photoURL;
 
       if (!newPhoto) {
-        // User removed photo: delete any local avatar file from disk
+        // User removed photo: delete any local avatar file from disk and Cloudinary
         this._deleteAvatarFilesForUid(user.uid);
+        if (user.cloudinaryPublicId) {
+          await deleteImageFromCloudinary(user.cloudinaryPublicId).catch(() => {});
+          user.cloudinaryPublicId = null;
+        }
         user.photoURL = null;
       } else if (typeof newPhoto === 'string' && newPhoto.startsWith('data:image/')) {
         // User uploaded new image file (base64):
-        // 1. Delete previous avatar files to keep storage clean
+        // 1. Delete previous avatar files from disk
         this._deleteAvatarFilesForUid(user.uid);
 
-        // 2. Decode and persist to disk
+        const cleanUid = String(user.uid).replace(/[^a-zA-Z0-9_-]/g, '');
+
+        // 2. Try uploading to Cloudinary first if configured
+        let cloudinaryUploaded = null;
         try {
-          const match = newPhoto.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
-          if (match) {
-            let ext = match[1].toLowerCase();
-            if (ext === 'jpeg') ext = 'jpg';
-            const base64Data = match[2];
-            const buffer = Buffer.from(base64Data, 'base64');
-            const cleanUid = String(user.uid).replace(/[^a-zA-Z0-9_-]/g, '');
-            const filename = `${cleanUid}.${ext}`;
-            const destPath = path.join(AVATARS_DIR, filename);
+          cloudinaryUploaded = await uploadImageToCloudinary(newPhoto, {
+            folder: 'engineerverse/avatars',
+            publicId: `avatar_${cleanUid}`,
+          });
+        } catch (err) {
+          console.warn('[UsersStore] Cloudinary upload notice:', err.message);
+        }
 
-            this._ensureDirectories();
-            fs.writeFileSync(destPath, buffer);
+        if (cloudinaryUploaded?.url) {
+          user.photoURL = cloudinaryUploaded.url;
+          user.cloudinaryPublicId = cloudinaryUploaded.publicId;
+        } else {
+          // Fallback to local disk storage
+          try {
+            const match = newPhoto.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+            if (match) {
+              let ext = match[1].toLowerCase();
+              if (ext === 'jpeg') ext = 'jpg';
+              const base64Data = match[2];
+              const buffer = Buffer.from(base64Data, 'base64');
+              const filename = `${cleanUid}.${ext}`;
+              const destPath = path.join(AVATARS_DIR, filename);
 
-            // Assign clean, cache-busted, short relative URL
-            user.photoURL = `/api/media/avatar/${cleanUid}?t=${Date.now()}`;
-          } else {
+              this._ensureDirectories();
+              fs.writeFileSync(destPath, buffer);
+
+              // Assign clean, cache-busted, relative URL
+              user.photoURL = `/api/media/avatar/${cleanUid}?t=${Date.now()}`;
+            } else {
+              user.photoURL = newPhoto;
+            }
+          } catch (err) {
+            console.error('[UsersStore] Error saving avatar image to disk:', err.message);
             user.photoURL = newPhoto;
           }
-        } catch (err) {
-          console.error('[UsersStore] Error saving avatar image to disk:', err.message);
-          user.photoURL = newPhoto;
         }
       } else if (typeof newPhoto === 'string' && (newPhoto.startsWith('http://') || newPhoto.startsWith('https://'))) {
-        // User specified external URL: delete any existing local avatar file from disk
+        // User specified external URL: delete any existing local avatar file & Cloudinary
         this._deleteAvatarFilesForUid(user.uid);
+        if (user.cloudinaryPublicId) {
+          await deleteImageFromCloudinary(user.cloudinaryPublicId).catch(() => {});
+          user.cloudinaryPublicId = null;
+        }
         user.photoURL = newPhoto.trim();
       } else if (typeof newPhoto === 'string' && newPhoto.startsWith('/api/media/avatar/')) {
         // Re-affirming existing avatar URL
@@ -400,7 +426,7 @@ class UsersStore {
   /**
    * Permanently deletes user account, avatar file, and cascades cleanup through the database.
    */
-  deleteUser(uid) {
+  async deleteUser(uid) {
     if (!uid) return { success: false, error: 'User ID is required for deletion.' };
 
     let user = this.usersById.get(uid);
@@ -419,8 +445,11 @@ class UsersStore {
     const targetUid = user.uid;
     const targetEmail = (user.email || '').toLowerCase();
 
-    // 1. Delete user's avatar files from server disk immediately
+    // 1. Delete user's avatar files from server disk and Cloudinary immediately
     this._deleteAvatarFilesForUid(targetUid);
+    if (user.cloudinaryPublicId) {
+      await deleteImageFromCloudinary(user.cloudinaryPublicId).catch(() => {});
+    }
 
     // 2. Cascade cleanup across problems wall (remove supports, mark author as deactivated)
     try {

@@ -25,6 +25,44 @@ export function getApiUrl(endpoint) {
   return path;
 }
 
+/**
+ * Resolves an avatar URL into a valid, reachable absolute URL across all domains
+ * (e.g. rjshree.com, vercel.app, preview iframes, or local dev).
+ */
+export function resolveAvatarUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  // Data URLs (base64) are directly renderable
+  if (trimmed.startsWith('data:image/')) {
+    return trimmed;
+  }
+
+  // Already fully qualified HTTP or HTTPS URL (e.g. Cloudinary, Unsplash, GitHub)
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+
+  // Relative backend path (e.g. /api/media/avatar/...)
+  if (trimmed.startsWith('/')) {
+    const resolved = getApiUrl(trimmed);
+    if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+      return resolved;
+    }
+    // In standalone or preview container, ensure full origin if window is defined
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      if (window.location.hostname.includes('rjshree.com')) {
+        return `https://engineerverse.vercel.app${trimmed}`;
+      }
+      return `${window.location.origin}${trimmed}`;
+    }
+    return resolved;
+  }
+
+  return trimmed;
+}
+
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
   const headers = { ...(options.headers || {}) };

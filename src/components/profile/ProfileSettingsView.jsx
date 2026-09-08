@@ -41,6 +41,7 @@ import {
 import { Badge } from '../ui/Badge.jsx';
 import { Button } from '../ui/Button.jsx';
 import { authService, AUTHORIZED_ADMIN_EMAIL } from '../../services/firebaseClient.js';
+import { resolveAvatarUrl } from '../../config/api.js';
 
 const ENGINEERING_DISCIPLINES = [
   'Full Stack Systems',
@@ -220,6 +221,8 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
   const selectedGradient =
     AVATAR_GRADIENTS.find((g) => g.id === avatarTheme) || AVATAR_GRADIENTS[0];
 
+  const resolvedPhotoSrc = resolveAvatarUrl(photoURL) || photoURL;
+
   const handleSaveProfile = async (e) => {
     if (e) e.preventDefault();
     if (!user) {
@@ -365,7 +368,7 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
             <div className="relative shrink-0">
               {photoURL ? (
                 <img
-                  src={photoURL}
+                  src={resolvedPhotoSrc}
                   alt={displayName}
                   referrerPolicy="no-referrer"
                   className={`w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 ${selectedGradient.border} shadow-[0_0_20px_rgba(168,85,247,0.3)]`}
@@ -677,7 +680,7 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
                     <div className="p-3 rounded-2xl bg-purple-950/30 border border-purple-900/40 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <img
-                          src={photoURL}
+                          src={resolvedPhotoSrc}
                           alt="Avatar Preview"
                           referrerPolicy="no-referrer"
                           className="w-10 h-10 rounded-xl object-cover border border-purple-400/50 shrink-0 shadow-sm"
@@ -759,7 +762,7 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
                     <div className="flex items-center gap-3">
                       {photoURL ? (
                         <img
-                          src={photoURL}
+                          src={resolvedPhotoSrc}
                           alt={displayName}
                           referrerPolicy="no-referrer"
                           className={`w-12 h-12 rounded-xl object-cover border ${selectedGradient.border}`}

@@ -60,6 +60,8 @@ router.get('/avatar/:uid', (req, res) => {
 
     res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
     res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     return fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error('[MediaRouter] Error serving avatar:', err.message);
