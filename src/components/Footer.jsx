@@ -61,16 +61,16 @@ export function Footer({ onNavigate }) {
         {/* Main Grid */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10 lg:gap-12">
           {/* Column 1: Brand & Craftsmanship Signature (Span 5 cols) */}
-          <div className="md:col-span-5 space-y-5">
+          <div className="md:col-span-5 space-y-5 flex flex-col items-center md:items-start text-center md:text-left">
             {/* Logo + Title */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-center gap-3">
               <img
                 src="https://3d-port-folio-git-main-rajshrees-projects.vercel.app/assets/logo-b1463779.svg"
                 alt="Shree Labs Logo"
                 referrerPolicy="no-referrer"
                 className="w-10 h-10 rounded-full object-cover shrink-0 shadow-[0_0_15px_rgba(168,85,247,0.2)]"
               />
-              <div>
+              <div className="flex flex-col items-center sm:items-start">
                 <div className="flex items-center gap-2">
                   <span className="text-lg font-extrabold text-white tracking-tight">
                     ENGINEERVERSE
@@ -93,8 +93,8 @@ export function Footer({ onNavigate }) {
             </div>
 
             {/* Precision tagline requested by user */}
-            <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-900/40 max-w-md">
-              <p className="text-xs sm:text-sm font-semibold text-purple-200 tracking-tight flex items-center gap-2">
+            <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-900/40 max-w-md w-full sm:w-auto">
+              <p className="text-xs sm:text-sm font-semibold text-purple-200 tracking-tight flex items-center justify-center md:justify-start gap-2">
                 <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
                 <span>Built with precision for the builders of tomorrow.</span>
               </p>
@@ -107,7 +107,7 @@ export function Footer({ onNavigate }) {
             </p>
 
             {/* Direct Studio & Founder Attribution */}
-            <div className="text-xs text-slate-300 flex items-center gap-2 flex-wrap">
+            <div className="text-xs text-slate-300 flex items-center justify-center md:justify-start gap-2 flex-wrap">
               <span className="text-slate-500">Crafted by</span>
               <a
                 href="https://rjshree.com"
@@ -121,11 +121,11 @@ export function Footer({ onNavigate }) {
             </div>
 
             {/* Social handles list (Interactive pills) */}
-            <div className="space-y-2 pt-1">
+            <div className="space-y-2 pt-1 w-full flex flex-col items-center md:items-start">
               <div className="text-[11px] font-bold text-purple-300 uppercase tracking-wider font-mono">
                 Connect & Follow
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap justify-center md:justify-start gap-2">
                 {socialLinks.map((social) => {
                   const Icon = social.icon;
                   return (
@@ -148,8 +148,8 @@ export function Footer({ onNavigate }) {
           </div>
 
           {/* Column 2: Explore Universe (Span 3 cols) */}
-          <div className="md:col-span-3 space-y-3 text-xs">
-            <div className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+          <div className="md:col-span-3 space-y-3 text-xs flex flex-col items-center md:items-start text-center md:text-left">
+            <div className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center justify-center md:justify-start gap-1.5">
               <Compass className="w-3.5 h-3.5 text-purple-400" />
               <span>Explore Pillars</span>
             </div>
@@ -158,7 +158,7 @@ export function Footer({ onNavigate }) {
                 <button
                   type="button"
                   onClick={() => onNavigate('hub')}
-                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-left"
+                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-center md:text-left"
                 >
                   Central Command Hub
                 </button>
@@ -167,7 +167,7 @@ export function Footer({ onNavigate }) {
                 <button
                   type="button"
                   onClick={() => onNavigate('dna')}
-                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-left"
+                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-center md:text-left"
                 >
                   Engineering DNA Assessment
                 </button>
@@ -176,7 +176,7 @@ export function Footer({ onNavigate }) {
                 <button
                   type="button"
                   onClick={() => onNavigate('problems')}
-                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-left"
+                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-center md:text-left"
                 >
                   The Problem Wall
                 </button>
@@ -185,7 +185,7 @@ export function Footer({ onNavigate }) {
                 <button
                   type="button"
                   onClick={() => onNavigate('missions')}
-                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-left"
+                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-center md:text-left"
                 >
                   Future Missions Simulator
                 </button>
@@ -194,7 +194,7 @@ export function Footer({ onNavigate }) {
                 <button
                   type="button"
                   onClick={() => onNavigate('stories')}
-                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-left"
+                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-center md:text-left"
                 >
                   Stories & Voices of Resilience
                 </button>
@@ -203,7 +203,7 @@ export function Footer({ onNavigate }) {
                 <button
                   type="button"
                   onClick={() => onNavigate('legacy')}
-                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-left"
+                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-center md:text-left"
                 >
                   Sir M. Visvesvaraya Legacy
                 </button>
@@ -212,18 +212,18 @@ export function Footer({ onNavigate }) {
           </div>
 
           {/* Column 3: Ecosystem, Pritee AI & Identity (Span 4 cols) */}
-          <div className="md:col-span-4 space-y-4 text-xs">
-            <div className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+          <div className="md:col-span-4 space-y-4 text-xs flex flex-col items-center md:items-start text-center md:text-left">
+            <div className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center justify-center md:justify-start gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
               <span>Ecosystem & AI</span>
             </div>
 
-            <ul className="space-y-2">
+            <ul className="space-y-2 flex flex-col items-center md:items-start">
               <li>
                 <button
                   type="button"
                   onClick={() => onNavigate('pritee')}
-                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-left flex items-center gap-1.5"
+                  className="hover:text-purple-300 hover:translate-x-0.5 transition-all cursor-pointer text-center md:text-left flex items-center gap-1.5"
                 >
                   <span>Ask Pritee AI Mentor</span>
                   <span className="text-[10px] bg-purple-900/60 text-purple-300 px-1.5 py-0.2 rounded font-mono">Live</span>
@@ -242,9 +242,9 @@ export function Footer({ onNavigate }) {
               </li>
             </ul>
 
-            {/* Canonical Platform Card (Preserved as requested as professional engineering standard) */}
-            <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-900/40 space-y-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-200">
+            {/* Canonical Platform Card */}
+            <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-900/40 space-y-2 max-w-sm w-full text-center md:text-left">
+              <div className="flex items-center justify-center md:justify-start gap-1.5 text-[11px] font-bold text-slate-200">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Canonical Web Platform</span>
               </div>

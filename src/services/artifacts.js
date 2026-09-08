@@ -65,6 +65,15 @@ export function generateBrandedSvgArtifact({
   const height = 1000;
   const canonicalUrl = buildCanonicalShareUrl(type, publicId);
 
+  const safeTitle = escapeXml(title);
+  const safeSubtitle = escapeXml(subtitle);
+  const safeSuperpower = escapeXml(superpower);
+
+  // Dynamic font sizing to prevent text overflow in generated SVG certificates
+  const titleFontSize = title && title.length > 20 ? Math.max(22, Math.floor(44 * (20 / title.length))) : 44;
+  const subtitleFontSize = subtitle && subtitle.length > 22 ? Math.max(20, Math.floor(34 * (22 / subtitle.length))) : 34;
+  const superpowerFontSize = superpower && superpower.length > 40 ? Math.max(12, Math.floor(16 * (40 / superpower.length))) : 16;
+
   const svgContent = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
   <defs>
@@ -106,13 +115,13 @@ export function generateBrandedSvgArtifact({
 
   <!-- Card Body -->
   <text x="56" y="210" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" letter-spacing="3" fill="#a855f7">CERTIFIED ENGINEERING IDENTITY</text>
-  <text x="56" y="270" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="44" font-weight="900" fill="#ffffff">${escapeXml(title)}</text>
+  <text x="56" y="270" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="${titleFontSize}" font-weight="900" fill="#ffffff">${safeTitle}</text>
 
   <!-- Archetype Box -->
   <rect x="56" y="320" width="${width - 112}" height="240" rx="20" fill="#130e38" fill-opacity="0.6" stroke="#a855f7" stroke-opacity="0.3" stroke-width="1.5" />
   <text x="88" y="365" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700" letter-spacing="1.5" fill="#c084fc">PRIMARY ENGINEERING ARCHETYPE</text>
-  <text x="88" y="420" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="34" font-weight="800" fill="url(#purpleGrad)">${escapeXml(subtitle)}</text>
-  <text x="88" y="465" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" fill="#cbd5e1">Core Superpower: <tspan font-weight="700" fill="#ffffff">${escapeXml(superpower)}</tspan></text>
+  <text x="88" y="420" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="${subtitleFontSize}" font-weight="800" fill="url(#purpleGrad)">${safeSubtitle}</text>
+  <text x="88" y="465" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="${superpowerFontSize}" fill="#cbd5e1">Core Superpower: <tspan font-weight="700" fill="#ffffff">${safeSuperpower}</tspan></text>
   <text x="88" y="510" font-family="monospace" font-size="15" fill="#a855f7">Overall DNA Score: <tspan font-weight="700" fill="#ffffff">${score} / 100</tspan></text>
 
   <!-- Manifesto Quote -->

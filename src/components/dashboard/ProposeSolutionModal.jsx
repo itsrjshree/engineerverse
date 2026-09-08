@@ -143,8 +143,8 @@ export function ProposeSolutionModal({ problem, isOpen, onClose, onSuccess, user
 
           <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-800/30 text-[11px] text-slate-300 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
-              <span>Deducts 1 Connection Credit. Submitter can review and accept contact.</span>
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Free to propose. Connection handshake occurs upon mutual review.</span>
             </div>
             <span className="font-mono text-purple-200 font-bold">{userCredits} Credits</span>
           </div>

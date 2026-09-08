@@ -332,6 +332,7 @@ class ProblemsStore {
     if (action === 'connect' || action === 'approve') {
       sol.status = 'connected';
       sol.connectedAt = new Date().toISOString();
+      usersStore.deductConnectionCredit(user.uid);
     } else if (action === 'decline' || action === 'reject') {
       sol.status = 'declined';
     }

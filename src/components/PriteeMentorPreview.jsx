@@ -101,7 +101,7 @@ export function PriteeMentorPreview() {
       </div>
 
       {/* Mentor Mode Selector Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
         {Object.values(MENTOR_MODES).map((mode) => {
           const isActive = activeMode === mode.id;
           return (

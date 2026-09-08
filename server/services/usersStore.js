@@ -46,6 +46,12 @@ class UsersStore {
 
     if (existing) {
       existing.lastActiveAt = new Date().toISOString();
+      const isAdminUser = (existing.email || email) === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+      if (isAdminUser) {
+        existing.isAdmin = true;
+        existing.role = 'admin';
+        existing.connectionCredits = 9999;
+      }
       if (userObj.displayName && !existing.displayName) {
         existing.displayName = userObj.displayName;
       }
@@ -67,7 +73,7 @@ class UsersStore {
       problemsCount: 0,
       solutionsCount: 0,
       supportsCount: 0,
-      connectionCredits: 5, // 5 free connection credits to connect with problem solvers
+      connectionCredits: isAdmin ? 9999 : 5, // 9999 for admin, 5 free connection credits for community engineers
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
     };
@@ -202,6 +208,50 @@ class UsersStore {
     if ((user.connectionCredits || 0) <= 0) return false;
     user.connectionCredits -= 1;
     return true;
+  }
+
+  setUserCredits(uid, amount, moderatorId) {
+    const user = this.users.get(uid);
+    if (!user) return { success: false, error: 'User not found.' };
+
+    const parsed = Math.max(0, Math.min(99999, parseInt(amount, 10) || 0));
+    user.connectionCredits = parsed;
+    user.lastActiveAt = new Date().toISOString();
+
+    this.logAudit({
+      action: 'USER_CREDITS_ADJUSTED',
+      targetUid: uid,
+      targetEmail: user.email,
+      newCredits: parsed,
+      moderatorId,
+      timestamp: new Date().toISOString(),
+    });
+
+    return { success: true, user: { ...user } };
+  }
+
+  updateUserProfile(uid, updates = {}) {
+    const user = this.users.get(uid);
+    if (!user) return null;
+
+    if (updates.displayName && typeof updates.displayName === 'string') {
+      user.displayName = updates.displayName.trim();
+    }
+    if (updates.bio !== undefined) {
+      user.bio = updates.bio;
+    }
+    if (updates.discipline !== undefined) {
+      user.discipline = updates.discipline;
+    }
+    if (updates.photoURL !== undefined) {
+      user.photoURL = updates.photoURL;
+    }
+    if (updates.portfolioUrl !== undefined) {
+      user.portfolioUrl = updates.portfolioUrl;
+    }
+
+    user.lastActiveAt = new Date().toISOString();
+    return { ...user };
   }
 
   logAudit(event) {

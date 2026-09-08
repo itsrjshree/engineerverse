@@ -106,4 +106,81 @@ router.get('/auth/me', async (req, res) => {
   });
 });
 
+// Update authenticated user profile endpoint
+router.put('/auth/profile', async (req, res) => {
+  const { verifyToken } = await import('../middleware/auth.js');
+  verifyToken(req, res, async () => {
+    if (!req.user || req.user.isAnonymous) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication is required to update profile settings.',
+      });
+    }
+
+    const { displayName, bio, discipline, photoURL, portfolioUrl } = req.body || {};
+    const { usersStore } = await import('../services/usersStore.js');
+
+    // Ensure user exists first
+    usersStore.getOrCreateUser(req.user);
+
+    const updatedUser = usersStore.updateUserProfile(req.user.uid, {
+      displayName,
+      bio,
+      discipline,
+      photoURL,
+      portfolioUrl,
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      user: {
+        ...req.user,
+        ...(updatedUser || {}),
+      },
+    });
+  });
+});
+
+// Dedicated avatar upload endpoint
+router.post('/auth/upload-avatar', async (req, res) => {
+  const { verifyToken } = await import('../middleware/auth.js');
+  verifyToken(req, res, async () => {
+    if (!req.user || req.user.isAnonymous) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication is required to upload a profile photo.',
+      });
+    }
+
+    const { dataUrl, photoURL } = req.body || {};
+    const finalPhoto = photoURL || dataUrl;
+
+    if (!finalPhoto || typeof finalPhoto !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'A valid image file or photo URL is required.',
+      });
+    }
+
+    const { usersStore } = await import('../services/usersStore.js');
+    usersStore.getOrCreateUser(req.user);
+
+    const updatedUser = usersStore.updateUserProfile(req.user.uid, {
+      photoURL: finalPhoto,
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile photo uploaded successfully.',
+      photoURL: finalPhoto,
+      user: {
+        ...req.user,
+        ...(updatedUser || {}),
+        photoURL: finalPhoto,
+      },
+    });
+  });
+});
+
 export default router;

@@ -199,6 +199,22 @@ router.post('/users/:uid/reactivate', requireAdmin, (req, res) => {
   });
 });
 
+// Adjust user connection credits (Admin authority)
+router.post('/users/:uid/credits', requireAdmin, (req, res) => {
+  const { credits } = req.body;
+  const result = usersStore.setUserCredits(req.params.uid, credits, req.user.uid);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    message: `User connection credits updated to ${result.user.connectionCredits}.`,
+    user: result.user,
+  });
+});
+
 // ============================================================================
 // AUDIT LOGS & EVENT JOURNAL
 // ============================================================================

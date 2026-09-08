@@ -35,7 +35,7 @@ import {
 import { authService, AUTHORIZED_ADMIN_EMAIL } from '../../services/firebaseClient.js';
 import { apiFetch } from '../../config/api.js';
 
-export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin }) {
+export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin, onOpenProfile }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('my-problems'); // 'my-problems' | 'my-solutions' | 'my-supported' | 'profile'
   const [loading, setLoading] = useState(true);
@@ -254,8 +254,17 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin 
         {/* Modal Header */}
         <div className="p-5 sm:p-6 border-b border-purple-950/60 bg-gradient-to-r from-purple-950/40 via-[#0a0a20] to-[#070718] flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
-              <User className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-2xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 overflow-hidden">
+              {currentUser?.photoURL ? (
+                <img
+                  src={currentUser.photoURL}
+                  alt={currentUser.displayName || 'Profile'}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User className="w-5 h-5" />
+              )}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -379,6 +388,20 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin 
           </div>
 
           <div className="flex items-center gap-2 shrink-0 pb-2">
+            {onOpenProfile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={User}
+                onClick={() => {
+                  onClose();
+                  onOpenProfile();
+                }}
+                className="text-xs text-purple-300 hover:text-white hover:bg-purple-950/60"
+              >
+                Profile Settings
+              </Button>
+            )}
             {isAdmin && (
               <Button
                 variant="outline"

@@ -16,7 +16,6 @@ import { ANALYTICS_EVENTS } from './config/analyticsEvents.js';
 
 // Layout & UI Components
 import Header from './components/Header.jsx';
-import EditionBanner from './components/EditionBanner.jsx';
 import HeroSection from './components/HeroSection.jsx';
 import Footer from './components/Footer.jsx';
 
@@ -28,14 +27,44 @@ import PriteeMentorPreview from './components/PriteeMentorPreview.jsx';
 import FutureMissionsView from './components/FutureMissionsView.jsx';
 import StoriesVoicesView from './components/StoriesVoicesView.jsx';
 import LegacyView from './components/LegacyView.jsx';
+import ProfileSettingsView from './components/profile/ProfileSettingsView.jsx';
 
 // Internal Product / Engineering Control Layer
 import AdminControlSurface from './components/admin/AdminControlSurface.jsx';
+import { authService, AUTHORIZED_ADMIN_EMAIL } from './services/firebaseClient.js';
 
 export function App() {
   const [activeSection, setActiveSection] = useState('hub');
   const [simulatedDate, setSimulatedDate] = useState(null);
   const [campaignState, setCampaignState] = useState(() => getCampaignState());
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Real-time Auth State Synchronization & Role-Based Screen Guard
+  useEffect(() => {
+    const unsubscribe = authService.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+
+      // Guard: If viewing admin surfaces, but user is logged out or NOT the authorized admin:
+      const isAdminSection = [
+        'admin',
+        'admin-control',
+        'features',
+        'routes',
+        'architecture',
+      ].includes(activeSection);
+
+      const isUserAdmin = Boolean(
+        user?.email && user.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()
+      );
+
+      if (isAdminSection && !isUserAdmin) {
+        // Instantly switch screen to public hub or user dashboard with zero stale admin view
+        setActiveSection(user ? 'dashboard' : 'hub');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [activeSection]);
 
   // Update campaign state whenever simulated date or live clock changes
   useEffect(() => {
@@ -52,6 +81,26 @@ export function App() {
   }, [campaignState.edition]);
 
   const handleNavigate = (sectionId) => {
+    // Guard navigation to admin for non-admins
+    const isTargetAdmin = [
+      'admin',
+      'admin-control',
+      'features',
+      'routes',
+      'architecture',
+    ].includes(sectionId);
+
+    const isUserAdmin = Boolean(
+      currentUser?.email &&
+        currentUser.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()
+    );
+
+    if (isTargetAdmin && !isUserAdmin) {
+      setActiveSection('hub');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     setActiveSection(sectionId);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -62,17 +111,12 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#050510] text-slate-100 flex flex-col selection:bg-purple-600 selection:text-white overflow-x-hidden font-sans">
-      {/* Dynamic Campaign Edition Banner */}
-      <EditionBanner
-        campaignState={campaignState}
-        onSimulateDate={setSimulatedDate}
-      />
-
       {/* Main Brand Header Navigation */}
       <Header
         activeSection={activeSection}
         onNavigate={handleNavigate}
         campaignState={campaignState}
+        currentUser={currentUser}
       />
 
       {/* Main Content Area */}
@@ -118,6 +162,7 @@ export function App() {
                 isOpen={true}
                 onClose={() => handleNavigate('problems')}
                 onOpenAdmin={() => handleNavigate('admin')}
+                onOpenProfile={() => handleNavigate('profile')}
               />
             </>
           )}
@@ -125,6 +170,9 @@ export function App() {
           {activeSection === 'stories' && <StoriesVoicesView />}
           {activeSection === 'legacy' && <LegacyView />}
           {activeSection === 'pritee' && <PriteeMentorPreview />}
+          {activeSection === 'profile' && (
+            <ProfileSettingsView onNavigate={handleNavigate} currentUser={currentUser} />
+          )}
 
           {/* Internal Engineering Layer (Restricted Admin Control Surface) */}
           {(activeSection === 'admin-control' ||

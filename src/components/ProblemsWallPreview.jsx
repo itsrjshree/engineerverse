@@ -433,13 +433,13 @@ export function ProblemsWallPreview({ onOpenAdmin }) {
         </div>
 
         {/* Search & Resolution Status Filter */}
-        <div className="flex items-center gap-2 w-full lg:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
           {/* Status filter toggle */}
-          <div className="flex items-center bg-black/40 rounded-xl p-1 border border-purple-900/40 shrink-0">
+          <div className="flex items-center justify-center sm:justify-start bg-black/40 rounded-xl p-1 border border-purple-900/40 shrink-0">
             <button
               type="button"
               onClick={() => setFilterResolved('all')}
-              className={`px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
+              className={`flex-1 sm:flex-none text-center px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
                 filterResolved === 'all'
                   ? 'bg-purple-900/60 text-white font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
@@ -450,7 +450,7 @@ export function ProblemsWallPreview({ onOpenAdmin }) {
             <button
               type="button"
               onClick={() => setFilterResolved('active')}
-              className={`px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
+              className={`flex-1 sm:flex-none text-center px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
                 filterResolved === 'active'
                   ? 'bg-purple-900/60 text-white font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
@@ -461,7 +461,7 @@ export function ProblemsWallPreview({ onOpenAdmin }) {
             <button
               type="button"
               onClick={() => setFilterResolved('resolved')}
-              className={`px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
+              className={`flex-1 sm:flex-none text-center px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
                 filterResolved === 'resolved'
                   ? 'bg-purple-900/60 text-white font-semibold'
                   : 'text-slate-400 hover:text-slate-200'

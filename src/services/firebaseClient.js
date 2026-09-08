@@ -289,6 +289,17 @@ export const authService = {
    */
   async getCurrentUser() {
     await ensureInitialized();
+
+    let cached = {};
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('engineerverse_authenticated_user_v1');
+        if (saved) {
+          cached = JSON.parse(saved) || {};
+        }
+      } catch {}
+    }
+
     if (firebaseAuth?.currentUser) {
       const u = firebaseAuth.currentUser;
       const email = (u.email || '').toLowerCase();
@@ -296,26 +307,102 @@ export const authService = {
       return {
         uid: u.uid,
         email,
-        displayName: u.displayName || email.split('@')[0],
-        photoURL: u.photoURL,
+        displayName: u.displayName || cached.displayName || (email ? email.split('@')[0] : 'Community Member'),
+        photoURL: u.photoURL || cached.photoURL || (typeof window !== 'undefined' ? (localStorage.getItem(`ev_user_photo_${u.uid || email}`) || null) : null),
         isAnonymous: false,
         isAdmin,
+        role: isAdmin ? 'admin' : 'member',
+        connectionCredits: cached.connectionCredits ?? 5,
+        bio: cached.bio || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_bio_${u.uid || email}`) || '' : ''),
+        discipline: cached.discipline || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_discipline_${u.uid || email}`) || 'Full Stack Systems' : 'Full Stack Systems'),
+        portfolioUrl: cached.portfolioUrl || '',
       };
     }
 
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('engineerverse_authenticated_user_v1');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.uid && !parsed.isAnonymous) {
-            return parsed;
-          }
-        }
-      } catch {}
+    if (cached && cached.uid && !cached.isAnonymous) {
+      const email = (cached.email || '').toLowerCase();
+      const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+      return {
+        ...cached,
+        isAdmin,
+        role: isAdmin ? 'admin' : (cached.role || 'member'),
+        connectionCredits: cached.connectionCredits ?? 5,
+      };
     }
 
     return null;
+  },
+
+  /**
+   * Updates user profile (displayName, bio, discipline, photoURL, portfolioUrl)
+   */
+  async updateUserProfile(updates = {}) {
+    await ensureInitialized();
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) return { success: false, error: 'User is not authenticated.' };
+
+    const { displayName, bio, discipline, photoURL, portfolioUrl } = updates;
+
+    // 1. Update Firebase Auth profile if user is logged in via Firebase
+    if (firebaseAuth?.currentUser) {
+      const fbUpdates = {};
+      if (displayName && displayName.trim()) fbUpdates.displayName = displayName.trim();
+      if (photoURL !== undefined) fbUpdates.photoURL = photoURL;
+      if (Object.keys(fbUpdates).length > 0) {
+        await updateProfile(firebaseAuth.currentUser, fbUpdates).catch((err) => {
+          console.warn('[AuthService] Firebase updateProfile error:', err.message);
+        });
+      }
+    }
+
+    // 2. Persist update on backend API if session token is available
+    const token = await this.getIdToken();
+    let serverUser = null;
+    if (token) {
+      try {
+        const res = await fetch(getApiUrl('/api/auth/profile'), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ displayName, bio, discipline, photoURL, portfolioUrl }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) serverUser = data.user;
+        }
+      } catch (err) {
+        console.warn('[AuthService] Backend profile update notice:', err.message);
+      }
+    }
+
+    // 3. Assemble merged profile
+    const mergedUser = {
+      ...currentUser,
+      ...(serverUser || {}),
+      displayName: displayName !== undefined ? displayName.trim() : currentUser.displayName,
+      bio: bio !== undefined ? bio : (currentUser.bio || ''),
+      discipline: discipline !== undefined ? discipline : (currentUser.discipline || 'Full Stack Systems'),
+      photoURL: photoURL !== undefined ? photoURL : (currentUser.photoURL || null),
+      portfolioUrl: portfolioUrl !== undefined ? portfolioUrl : (currentUser.portfolioUrl || ''),
+      connectionCredits: serverUser?.connectionCredits ?? currentUser.connectionCredits ?? 5,
+    };
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(mergedUser));
+      if (bio !== undefined) localStorage.setItem(`ev_user_bio_${mergedUser.uid || mergedUser.email}`, bio);
+      if (discipline !== undefined) localStorage.setItem(`ev_user_discipline_${mergedUser.uid || mergedUser.email}`, discipline);
+      if (photoURL !== undefined) localStorage.setItem(`ev_user_photo_${mergedUser.uid || mergedUser.email}`, photoURL || '');
+    }
+
+    // 4. Real-time broadcast to all subscribers
+    dispatchAuthState(mergedUser);
+
+    return {
+      success: true,
+      user: mergedUser,
+    };
   },
 
   /**
@@ -332,11 +419,18 @@ export const authService = {
       if (res.ok) {
         const data = await res.json();
         if (data.authenticated && data.user) {
+          const email = (data.user.email || '').toLowerCase();
+          const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+          const finalUser = {
+            ...data.user,
+            isAdmin,
+            connectionCredits: data.user.connectionCredits ?? 5,
+          };
           if (typeof window !== 'undefined') {
-            localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(data.user));
+            localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(finalUser));
           }
-          dispatchAuthState(data.user);
-          return data.user;
+          dispatchAuthState(finalUser);
+          return finalUser;
         }
       }
     } catch (err) {
@@ -359,6 +453,8 @@ export const authService = {
       photoURL: user.photoURL || null,
       isAnonymous: Boolean(user.isAnonymous),
       isAdmin,
+      role: isAdmin ? 'admin' : 'member',
+      connectionCredits: 5,
     };
   },
 
@@ -691,13 +787,26 @@ export const authService = {
           const idToken = await user.getIdToken().catch(() => null);
           const email = (user.email || '').toLowerCase();
           const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+
+          let cached = {};
+          if (typeof window !== 'undefined') {
+            try {
+              const s = localStorage.getItem('engineerverse_authenticated_user_v1');
+              if (s) cached = JSON.parse(s) || {};
+            } catch {}
+          }
+
           const profile = {
             uid: user.uid,
             email,
-            displayName: user.displayName || email.split('@')[0],
-            photoURL: user.photoURL,
+            displayName: user.displayName || cached.displayName || (email ? email.split('@')[0] : 'Community Member'),
+            photoURL: user.photoURL || cached.photoURL || null,
             isAnonymous: false,
             isAdmin,
+            role: isAdmin ? 'admin' : 'member',
+            connectionCredits: cached.connectionCredits ?? 5,
+            bio: cached.bio || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_bio_${user.uid || email}`) || '' : ''),
+            discipline: cached.discipline || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_discipline_${user.uid || email}`) || 'Full Stack Systems' : 'Full Stack Systems'),
             idToken,
           };
           dispatchAuthState(profile);

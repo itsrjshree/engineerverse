@@ -457,7 +457,7 @@ export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateD
       </div>
 
       {/* Navigation Tabs between Feature Registry and AI Orchestrator Diagnostics */}
-      <div className="flex items-center gap-2 border-b border-purple-900/60 pb-3">
+      <div className="flex items-center gap-2 border-b border-purple-900/60 pb-3 overflow-x-auto scrollbar-none flex-nowrap">
         <button
           type="button"
           onClick={() => setActiveTab('registry')}

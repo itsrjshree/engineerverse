@@ -247,7 +247,7 @@ export function DnaSimulator() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <TabPill
                 label="Identity Card"
                 active={activeTab === 'card'}
@@ -274,7 +274,7 @@ export function DnaSimulator() {
             <div className="flex flex-col items-center justify-center py-4 space-y-4">
               {/* Copy Protected Card Container */}
               <div
-                className="w-full max-w-md bg-gradient-to-b from-[#120f30] via-[#09091d] to-[#060613] rounded-3xl border-2 border-purple-500/40 p-6 sm:p-8 shadow-[0_0_40px_rgba(168,85,247,0.25)] space-y-6 relative overflow-hidden select-none"
+                className="w-full max-w-md bg-gradient-to-b from-[#120f30] via-[#09091d] to-[#060613] rounded-3xl border-2 border-purple-500/40 p-4 sm:p-6 md:p-8 shadow-[0_0_40px_rgba(168,85,247,0.25)] space-y-5 sm:space-y-6 relative overflow-hidden select-none"
                 onCopy={(e) => {
                   e.preventDefault();
                   setCopyNotice('To protect identity card integrity, use the Official Share Link or Download Branded Card.');
@@ -304,11 +304,11 @@ export function DnaSimulator() {
                   <span className="text-[11px] uppercase tracking-wider text-purple-300/70 font-semibold">
                     Certified Engineer
                   </span>
-                  <div className="text-2xl font-black text-white tracking-tight">
+                  <div className="text-xl sm:text-2xl font-black text-white tracking-tight break-words">
                     {userName || 'Anonymous Engineer'}
                   </div>
                   {publicId && (
-                    <div className="text-[10px] font-mono text-purple-400/60">
+                    <div className="text-[10px] font-mono text-purple-400/60 break-all">
                       ID: {publicId}
                     </div>
                   )}
@@ -324,17 +324,17 @@ export function DnaSimulator() {
                       {calculatedResults.classification.primary.matchScore}% Match
                     </Badge>
                   </div>
-                  <div className="text-xl font-extrabold text-white">
+                  <div className="text-lg sm:text-xl font-extrabold text-white break-words">
                     {calculatedResults.classification.primary.title}
                   </div>
-                  <p className="text-xs text-purple-200/80 italic">
+                  <p className="text-xs text-purple-200/80 italic break-words leading-relaxed">
                     "{calculatedResults.classification.primary.motto}"
                   </p>
                 </div>
 
                 {/* Superpower & Dimensions preview */}
                 <div className="space-y-2 text-xs">
-                  <div className="text-slate-300">
+                  <div className="text-slate-300 break-words leading-relaxed">
                     <strong className="text-purple-400">Superpower:</strong>{' '}
                     {calculatedResults.classification.primary.superpower}
                   </div>
