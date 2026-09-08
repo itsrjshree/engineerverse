@@ -242,10 +242,13 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
 
       if (result.success) {
         setUser(result.user);
+        if (result.user?.photoURL !== undefined) {
+          setPhotoURL(result.user.photoURL || '');
+        }
         if (typeof window !== 'undefined') {
           localStorage.setItem(`ev_user_avatar_theme_${user.uid || user.email}`, avatarTheme);
         }
-        setSuccessToast('Profile details & identity updated in real-time across ENGINEERVERSE.');
+        setSuccessToast('Profile details & photo updated in real-time. Old avatar purged from database.');
         setTimeout(() => setSuccessToast(''), 4500);
       } else {
         setErrorToast(result.error || 'Failed to update profile.');
@@ -254,6 +257,33 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
       setErrorToast(err.message || 'An error occurred while saving profile.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmationInput !== 'DELETE') {
+      setErrorToast('Please type DELETE in capital letters to confirm account removal.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setErrorToast('');
+
+    try {
+      const res = await authService.deleteAccount();
+      if (res.success) {
+        if (onNavigate) onNavigate('hub');
+      } else {
+        setErrorToast(res.error || 'Failed to delete account.');
+        setIsDeletingAccount(false);
+      }
+    } catch (err) {
+      setErrorToast(err.message || 'Error deleting account.');
+      setIsDeletingAccount(false);
     }
   };
 
@@ -913,7 +943,29 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
               </div>
             </div>
 
-            {/* Action Zone */}
+            {/* Database Hygiene & Optimization Status */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-purple-950/30 border border-purple-900/50 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <span>Real-Time Database Optimization & Deduplication Engine</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-[#090920] border border-purple-900/40">
+                  <span className="font-semibold text-white block mb-0.5">Zero Duplication</span>
+                  <span className="text-slate-400 text-[11px]">Strict canonical UID & email indexing prevents duplicate records.</span>
+                </div>
+                <div className="p-3 rounded-xl bg-[#090920] border border-purple-900/40">
+                  <span className="font-semibold text-white block mb-0.5">Auto-Garbage Collection</span>
+                  <span className="text-slate-400 text-[11px]">Previous avatar images are automatically deleted when updated.</span>
+                </div>
+                <div className="p-3 rounded-xl bg-[#090920] border border-purple-900/40">
+                  <span className="font-semibold text-white block mb-0.5">Cascading Deletion</span>
+                  <span className="text-slate-400 text-[11px]">Account termination wipes user details & avatar files in real time.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Zone: Sign Out & Permanent Account Deletion */}
             <div className="pt-6 border-t border-purple-950/60 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
                 <h4 className="text-sm font-bold text-white">Sign Out of Session</h4>
@@ -927,11 +979,84 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
                 variant="outline"
                 size="sm"
                 onClick={handleSignOut}
-                className="text-red-400 border-red-900/50 hover:bg-red-950/40 hover:text-red-300 flex items-center gap-2 cursor-pointer self-start sm:self-auto"
+                className="text-slate-300 border-slate-800 hover:bg-white/5 flex items-center gap-2 cursor-pointer self-start sm:self-auto"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Sign Out</span>
               </Button>
+            </div>
+
+            {/* Danger Zone: Account Deletion */}
+            <div className="p-5 rounded-2xl bg-red-950/20 border border-red-900/40 space-y-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <h4 className="text-sm font-bold text-red-400 flex items-center gap-2">
+                    <Trash2 className="w-4 h-4" />
+                    <span>Danger Zone: Permanent Account & Data Deletion</span>
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                    Permanently wipe your account profile, avatar images, and community activity records in real time. This action cannot be undone.
+                  </p>
+                </div>
+
+                {!showDeleteConfirm && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="text-red-400 border-red-800/60 hover:bg-red-950/50 hover:text-red-300 flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Account</span>
+                  </Button>
+                )}
+              </div>
+
+              {showDeleteConfirm && (
+                <div className="p-4 rounded-xl bg-[#08081c] border border-red-800/60 space-y-3 animate-in fade-in slide-in-from-top-1">
+                  <div className="text-xs text-red-300 font-semibold flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-red-400" />
+                    <span>Confirm Irreversible Account Deletion</span>
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    To prevent accidental deletion, please type <span className="font-mono font-bold text-red-400">DELETE</span> below:
+                  </p>
+                  <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                    <input
+                      type="text"
+                      value={deleteConfirmationInput}
+                      onChange={(e) => setDeleteConfirmationInput(e.target.value)}
+                      placeholder="Type DELETE to confirm"
+                      className="w-full sm:w-64 px-3 py-2 rounded-xl bg-[#050512] border border-red-800/60 text-white text-xs font-mono focus:outline-none focus:border-red-400"
+                    />
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={deleteConfirmationInput !== 'DELETE' || isDeletingAccount}
+                        onClick={handleDeleteAccount}
+                        className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {isDeletingAccount ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        <span>{isDeletingAccount ? 'Purging Records...' : 'Permanently Delete'}</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setShowDeleteConfirm(false);
+                          setDeleteConfirmationInput('');
+                        }}
+                        className="text-xs text-slate-400 hover:text-white"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

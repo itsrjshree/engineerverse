@@ -170,16 +170,52 @@ router.post('/auth/upload-avatar', async (req, res) => {
       photoURL: finalPhoto,
     });
 
+    const activePhoto = updatedUser ? updatedUser.photoURL : finalPhoto;
+
     res.json({
       success: true,
       message: 'Profile photo uploaded successfully.',
-      photoURL: finalPhoto,
+      photoURL: activePhoto,
       user: {
         ...req.user,
         ...(updatedUser || {}),
-        photoURL: finalPhoto,
+        photoURL: activePhoto,
       },
     });
+  });
+});
+
+// Delete user account & real-time cleanup across database
+router.delete('/auth/account', async (req, res) => {
+  const { verifyToken } = await import('../middleware/auth.js');
+  verifyToken(req, res, async () => {
+    if (!req.user || req.user.isAnonymous) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication is required to delete account.',
+      });
+    }
+
+    const { usersStore } = await import('../services/usersStore.js');
+    const result = usersStore.deleteUser(req.user.uid);
+    res.json(result);
+  });
+});
+
+// Compatibility POST alias for account deletion
+router.post('/auth/delete-account', async (req, res) => {
+  const { verifyToken } = await import('../middleware/auth.js');
+  verifyToken(req, res, async () => {
+    if (!req.user || req.user.isAnonymous) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication is required to delete account.',
+      });
+    }
+
+    const { usersStore } = await import('../services/usersStore.js');
+    const result = usersStore.deleteUser(req.user.uid);
+    res.json(result);
   });
 });
 

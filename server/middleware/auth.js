@@ -116,6 +116,7 @@ export async function verifyToken(req, res, next) {
         }
         req.user = {
           ...userObj,
+          ...(storeUser || {}),
           status: storeUser?.status || 'active',
           warningReason: storeUser?.warningReason || null,
           connectionCredits: storeUser?.connectionCredits ?? 5,
@@ -162,6 +163,7 @@ export async function verifyToken(req, res, next) {
 
         req.user = {
           ...userObj,
+          ...(storeUser || {}),
           status: storeUser?.status || 'active',
           warningReason: storeUser?.warningReason || null,
           connectionCredits: storeUser?.connectionCredits ?? 5,

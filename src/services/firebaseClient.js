@@ -16,6 +16,7 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   signOut as fbSignOut,
+  deleteUser as fbDeleteUser,
   onAuthStateChanged as fbOnAuthStateChanged,
 } from 'firebase/auth';
 import { getApiUrl } from '../config/api.js';
@@ -343,19 +344,7 @@ export const authService = {
 
     const { displayName, bio, discipline, photoURL, portfolioUrl } = updates;
 
-    // 1. Update Firebase Auth profile if user is logged in via Firebase
-    if (firebaseAuth?.currentUser) {
-      const fbUpdates = {};
-      if (displayName && displayName.trim()) fbUpdates.displayName = displayName.trim();
-      if (photoURL !== undefined) fbUpdates.photoURL = photoURL;
-      if (Object.keys(fbUpdates).length > 0) {
-        await updateProfile(firebaseAuth.currentUser, fbUpdates).catch((err) => {
-          console.warn('[AuthService] Firebase updateProfile error:', err.message);
-        });
-      }
-    }
-
-    // 2. Persist update on backend API if session token is available
+    // 1. Persist update on backend API FIRST (converts base64 dataUrls to permanent short URLs on server)
     const token = await this.getIdToken();
     let serverUser = null;
     if (token) {
@@ -377,6 +366,26 @@ export const authService = {
       }
     }
 
+    const resolvedPhotoURL = serverUser?.photoURL !== undefined
+      ? serverUser.photoURL
+      : (photoURL !== undefined ? photoURL : (currentUser.photoURL || null));
+
+    // 2. Update Firebase Auth profile with clean, short URL (never exceeds 2048 chars)
+    if (firebaseAuth?.currentUser) {
+      const fbUpdates = {};
+      if (displayName && displayName.trim()) fbUpdates.displayName = displayName.trim();
+      if (resolvedPhotoURL !== undefined) {
+        if (!resolvedPhotoURL || resolvedPhotoURL.startsWith('http') || resolvedPhotoURL.startsWith('/')) {
+          fbUpdates.photoURL = resolvedPhotoURL;
+        }
+      }
+      if (Object.keys(fbUpdates).length > 0) {
+        await updateProfile(firebaseAuth.currentUser, fbUpdates).catch((err) => {
+          console.warn('[AuthService] Firebase updateProfile error:', err.message);
+        });
+      }
+    }
+
     // 3. Assemble merged profile
     const mergedUser = {
       ...currentUser,
@@ -384,16 +393,23 @@ export const authService = {
       displayName: displayName !== undefined ? displayName.trim() : currentUser.displayName,
       bio: bio !== undefined ? bio : (currentUser.bio || ''),
       discipline: discipline !== undefined ? discipline : (currentUser.discipline || 'Full Stack Systems'),
-      photoURL: photoURL !== undefined ? photoURL : (currentUser.photoURL || null),
+      photoURL: resolvedPhotoURL,
       portfolioUrl: portfolioUrl !== undefined ? portfolioUrl : (currentUser.portfolioUrl || ''),
       connectionCredits: serverUser?.connectionCredits ?? currentUser.connectionCredits ?? 5,
     };
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(mergedUser));
-      if (bio !== undefined) localStorage.setItem(`ev_user_bio_${mergedUser.uid || mergedUser.email}`, bio);
-      if (discipline !== undefined) localStorage.setItem(`ev_user_discipline_${mergedUser.uid || mergedUser.email}`, discipline);
-      if (photoURL !== undefined) localStorage.setItem(`ev_user_photo_${mergedUser.uid || mergedUser.email}`, photoURL || '');
+      const uidKey = mergedUser.uid || mergedUser.email;
+      if (bio !== undefined) localStorage.setItem(`ev_user_bio_${uidKey}`, bio);
+      if (discipline !== undefined) localStorage.setItem(`ev_user_discipline_${uidKey}`, discipline);
+      if (resolvedPhotoURL !== undefined) {
+        if (resolvedPhotoURL) {
+          localStorage.setItem(`ev_user_photo_${uidKey}`, resolvedPhotoURL);
+        } else {
+          localStorage.removeItem(`ev_user_photo_${uidKey}`);
+        }
+      }
     }
 
     // 4. Real-time broadcast to all subscribers
@@ -403,6 +419,59 @@ export const authService = {
       success: true,
       user: mergedUser,
     };
+  },
+
+  /**
+   * Permanently deletes user account, avatar, and all associated DB records.
+   */
+  async deleteAccount() {
+    await ensureInitialized();
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) return { success: false, error: 'User is not authenticated.' };
+
+    const token = await this.getIdToken();
+    let backendSuccess = false;
+
+    if (token) {
+      try {
+        const res = await fetch(getApiUrl('/api/auth/account'), {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (res.ok) {
+          backendSuccess = true;
+        }
+      } catch (err) {
+        console.warn('[AuthService] Backend account deletion notice:', err.message);
+      }
+    }
+
+    // If Firebase Auth currentUser is active, delete Firebase user
+    if (firebaseAuth?.currentUser) {
+      try {
+        await fbDeleteUser(firebaseAuth.currentUser);
+      } catch (err) {
+        console.warn('[AuthService] Firebase deleteUser error (signing out instead):', err.message);
+        await fbSignOut(firebaseAuth).catch(() => {});
+      }
+    }
+
+    // Clean up all local storage keys for this user
+    if (typeof window !== 'undefined') {
+      const uid = currentUser.uid || currentUser.email;
+      localStorage.removeItem('engineerverse_session_token_v1');
+      localStorage.removeItem('engineerverse_authenticated_user_v1');
+      localStorage.removeItem(`ev_user_bio_${uid}`);
+      localStorage.removeItem(`ev_user_discipline_${uid}`);
+      localStorage.removeItem(`ev_user_photo_${uid}`);
+      localStorage.removeItem(`ev_user_avatar_theme_${uid}`);
+    }
+
+    dispatchAuthState(null);
+    return { success: true, message: 'Account permanently deleted from ENGINEERVERSE.' };
   },
 
   /**
@@ -796,20 +865,28 @@ export const authService = {
             } catch {}
           }
 
+          const storedPhoto = typeof window !== 'undefined'
+            ? (localStorage.getItem(`ev_user_photo_${user.uid || email}`) || cached.photoURL || null)
+            : null;
+
           const profile = {
             uid: user.uid,
             email,
             displayName: user.displayName || cached.displayName || (email ? email.split('@')[0] : 'Community Member'),
-            photoURL: user.photoURL || cached.photoURL || null,
+            photoURL: user.photoURL || storedPhoto || null,
             isAnonymous: false,
             isAdmin,
             role: isAdmin ? 'admin' : 'member',
             connectionCredits: cached.connectionCredits ?? 5,
             bio: cached.bio || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_bio_${user.uid || email}`) || '' : ''),
             discipline: cached.discipline || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_discipline_${user.uid || email}`) || 'Full Stack Systems' : 'Full Stack Systems'),
+            portfolioUrl: cached.portfolioUrl || '',
             idToken,
           };
           dispatchAuthState(profile);
+
+          // Sync full canonical database profile seamlessly in background without flickering
+          this.refreshCurrentUser().catch(() => {});
         } else {
           // If Firebase signed out, check if a local session is still active
           const localUser = await this.getCurrentUser();

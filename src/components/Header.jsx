@@ -58,8 +58,12 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
     setAvatarError(false);
   }, [currentUser?.photoURL]);
 
-  // Subscribe to auth state
+  // Subscribe to auth state and ensure instant profile hydration
   useEffect(() => {
+    authService.getCurrentUser().then((user) => {
+      if (user) setCurrentUser(user);
+    });
+
     const unsubscribe = authService.onAuthStateChanged((user) => {
       setCurrentUser(user);
     });

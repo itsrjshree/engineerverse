@@ -427,6 +427,27 @@ class ProblemsStore {
     };
   }
 
+  purgeUserData(uid) {
+    if (!uid) return;
+    for (const p of this.problems.values()) {
+      if (p.supportedByUids && p.supportedByUids.includes(uid)) {
+        p.supportedByUids = p.supportedByUids.filter((u) => u !== uid);
+        p.supporterCount = Math.max(0, (p.supporterCount || 0) - 1);
+      }
+      if (p.authorId === uid) {
+        p.authorName = '[Deactivated Member]';
+        p.authorEmail = '';
+      }
+      if (p.solutions && Array.isArray(p.solutions)) {
+        for (const sol of p.solutions) {
+          if (sol.authorId === uid) {
+            sol.authorName = '[Deactivated Member]';
+          }
+        }
+      }
+    }
+  }
+
   _maskEmail(email) {
     if (!email || !email.includes('@')) return '';
     const [name, domain] = email.split('@');
