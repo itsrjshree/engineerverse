@@ -114,18 +114,11 @@ function setupFirebaseInstance(configToUse) {
     }
 
     isFirebaseConfigured = true;
-    if (typeof authService !== 'undefined' && authService) {
-      authService.isConfigured = true;
-    }
     return true;
   } catch (err) {
     console.warn('[FirebaseClient] Error initializing Firebase app:', err.message);
     return false;
   }
-}
-
-if (isFirebaseConfigured) {
-  setupFirebaseInstance(initialFirebaseConfig);
 }
 
 // Dynamic initialization attempt from server client-config endpoint (if available)
@@ -210,7 +203,12 @@ export const guestStorage = {
  * Strictly enforces real Firebase Authentication. No local mock admin bypasses.
  */
 export const authService = {
-  isConfigured: isFirebaseConfigured,
+  get isConfigured() {
+    return isFirebaseConfigured;
+  },
+  set isConfigured(val) {
+    isFirebaseConfigured = Boolean(val);
+  },
   authorizedAdminEmail: AUTHORIZED_ADMIN_EMAIL,
 
   /**
@@ -659,6 +657,11 @@ export const authService = {
     }
   },
 };
+
+// Perform initial synchronous setup if client environment credentials are present
+if (isFirebaseConfigured) {
+  setupFirebaseInstance(initialFirebaseConfig);
+}
 
 export default {
   isFirebaseConfigured,
