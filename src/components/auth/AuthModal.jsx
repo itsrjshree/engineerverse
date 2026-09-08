@@ -34,11 +34,24 @@ import { authService, isFirebaseConfigured } from '../../services/firebaseClient
 import { Button } from '../ui/Button.jsx';
 import { Badge } from '../ui/Badge.jsx';
 
-export function AuthModal({ isOpen, onClose, currentUser, onAuthSuccess, onNavigateToAdmin }) {
+export function AuthModal({
+  isOpen,
+  onClose,
+  currentUser,
+  onAuthSuccess,
+  onSuccess,
+  onNavigateToAdmin,
+  promptReason,
+}) {
   const [activeTab, setActiveTab] = useState('social'); // 'social' | 'email' | 'guest'
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [errorCode, setErrorCode] = useState(null);
+
+  const notifySuccess = (user) => {
+    if (typeof onSuccess === 'function') onSuccess(user);
+    if (typeof onAuthSuccess === 'function') onAuthSuccess(user);
+  };
 
   // Email/Password form state
   const [emailMode, setEmailMode] = useState('signin'); // 'signin' | 'signup'
@@ -89,9 +102,7 @@ export function AuthModal({ isOpen, onClose, currentUser, onAuthSuccess, onNavig
         return;
       }
 
-      if (onAuthSuccess) {
-        onAuthSuccess(res.user);
-      }
+      notifySuccess(res.user);
       onClose();
     } catch (err) {
       setAuthError(err.message || 'Authentication error.');
@@ -126,9 +137,7 @@ export function AuthModal({ isOpen, onClose, currentUser, onAuthSuccess, onNavig
         return;
       }
 
-      if (onAuthSuccess) {
-        onAuthSuccess(res.user);
-      }
+      notifySuccess(res.user);
       onClose();
     } catch (err) {
       setAuthError(err.message || 'Authentication failed.');
@@ -150,9 +159,7 @@ export function AuthModal({ isOpen, onClose, currentUser, onAuthSuccess, onNavig
       setAuthError(null);
 
       const res = await authService.continueAsCommunityMember(guestNameInput, guestRoleInput);
-      if (onAuthSuccess) {
-        onAuthSuccess(res.user);
-      }
+      notifySuccess(res.user);
       onClose();
     } catch (err) {
       setAuthError(err.message || 'Quick join failed.');
@@ -212,6 +219,14 @@ export function AuthModal({ isOpen, onClose, currentUser, onAuthSuccess, onNavig
             </p>
           </div>
         </div>
+
+        {/* Prompt Reason Banner */}
+        {promptReason && (
+          <div className="p-3 rounded-xl bg-purple-950/70 border border-purple-600/50 text-purple-200 text-xs flex items-center gap-2.5 animate-in fade-in">
+            <Info className="w-4 h-4 text-purple-400 shrink-0" />
+            <span className="font-medium">{promptReason}</span>
+          </div>
+        )}
 
         {/* Current Authenticated Identity State */}
         {currentUser && !currentUser.isAnonymous ? (

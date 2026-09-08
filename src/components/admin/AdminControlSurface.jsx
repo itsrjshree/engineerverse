@@ -28,6 +28,7 @@ import {
   LogOut,
   RefreshCw,
   AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
 import { features, VERIFICATION_STATES, STATUS_TYPES } from '../../config/features.js';
 import { getExperiencePillarForFeature } from '../../config/experiences.js';
@@ -36,6 +37,7 @@ import { Badge } from '../ui/Badge.jsx';
 import { Card } from '../ui/Card.jsx';
 import { Button } from '../ui/Button.jsx';
 import { AiOrchestratorDiagnostics } from './AiOrchestratorDiagnostics.jsx';
+import { CommunityModerationView } from './CommunityModerationView.jsx';
 import { authService } from '../../services/firebaseClient.js';
 
 export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateDate }) {
@@ -46,7 +48,7 @@ export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateD
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   // Tab & feature inspector state
-  const [activeTab, setActiveTab] = useState('registry'); // 'registry' | 'ai-diagnostics'
+  const [activeTab, setActiveTab] = useState('registry'); // 'registry' | 'ai-diagnostics' | 'community-moderation'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArea, setSelectedArea] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
@@ -481,10 +483,25 @@ export function AdminControlSurface({ onExitToPublic, campaignState, onSimulateD
           <Cpu className="w-4 h-4" />
           <span>Pritee AI Multi-Provider Orchestrator</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('community-moderation')}
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+            activeTab === 'community-moderation'
+              ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40'
+              : 'bg-purple-950/30 text-purple-300 hover:bg-purple-900/40 border border-purple-900/40'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4 text-amber-400" />
+          <span>Community & Problem Wall Moderation</span>
+        </button>
       </div>
 
       {activeTab === 'ai-diagnostics' ? (
         <AiOrchestratorDiagnostics />
+      ) : activeTab === 'community-moderation' ? (
+        <CommunityModerationView />
       ) : (
         <>
           {/* High-level Implementation & Verification Metric Cards */}

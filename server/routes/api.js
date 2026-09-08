@@ -60,4 +60,50 @@ router.get('/auth/client-config', (req, res) => {
   });
 });
 
+// Issues a cryptographic session token for authenticated email/community members
+router.post('/auth/session', async (req, res) => {
+  const { user } = req.body;
+  if (!user || !user.uid) {
+    return res.status(400).json({ success: false, error: 'User object with uid is required.' });
+  }
+
+  const { createSessionToken } = await import('../services/sessionService.js');
+  const { usersStore } = await import('../services/usersStore.js');
+
+  const token = createSessionToken(user);
+  const storeUser = usersStore.getOrCreateUser(user);
+
+  res.json({
+    success: true,
+    token,
+    user: storeUser,
+  });
+});
+
+// Authenticated current user profile endpoint (with credits, warnings, status)
+router.get('/auth/me', async (req, res) => {
+  const { verifyToken } = await import('../middleware/auth.js');
+  verifyToken(req, res, async () => {
+    if (!req.user || req.user.isAnonymous) {
+      return res.json({
+        success: true,
+        authenticated: false,
+        user: null,
+      });
+    }
+
+    const { usersStore } = await import('../services/usersStore.js');
+    const storeUser = usersStore.getOrCreateUser(req.user);
+
+    res.json({
+      success: true,
+      authenticated: true,
+      user: {
+        ...req.user,
+        ...storeUser,
+      },
+    });
+  });
+});
+
 export default router;

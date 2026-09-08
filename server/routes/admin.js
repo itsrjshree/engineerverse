@@ -1,16 +1,28 @@
 /**
  * ENGINEERVERSE — Admin & Moderation Router
  * Server-side authorization strictly enforced.
+ * Sole Authorized Admin: rajshreeakm@gmail.com
+ * 
+ * Features:
+ * - Full problem CRUD & status moderation (Edit, Delete, Resolve, Approve, Reject).
+ * - User Directory & Moderation Authorities (Warn, Suspend, Reactivate users).
+ * - Full audit logs and security event visibility.
  */
 
 import { Router } from 'express';
 import { requireAdmin, verifyToken } from '../middleware/auth.js';
 import { analyticsStore } from '../services/analyticsStore.js';
+import { problemsStore } from '../services/problemsStore.js';
+import { usersStore } from '../services/usersStore.js';
 
 const router = Router();
 
 // Apply auth verification to all admin routes
 router.use(verifyToken);
+
+// ============================================================================
+// ADMIN IDENTITY & OVERVIEW
+// ============================================================================
 
 // Admin Session Verification
 router.get('/verify-session', requireAdmin, (req, res) => {
@@ -26,6 +38,9 @@ router.get('/verify-session', requireAdmin, (req, res) => {
 // Admin Telemetry & Overview
 router.get('/overview', requireAdmin, (req, res) => {
   const metrics = analyticsStore.getMetrics();
+  const allProblems = problemsStore.getAllForAdmin();
+  const allUsers = usersStore.getAllUsers();
+
   res.json({
     success: true,
     systemMetrics: {
@@ -33,9 +48,12 @@ router.get('/overview', requireAdmin, (req, res) => {
       dnaCompletions: metrics.dnaCompletions,
       cardsGenerated: metrics.cardsGenerated,
       sharesTriggered: metrics.sharesTriggered,
-      problemsPendingModeration: 0,
-      problemsApproved: metrics.problemsSubmitted,
-      storiesPendingModeration: 0,
+      totalProblems: allProblems.length,
+      problemsResolved: allProblems.filter((p) => p.isResolved).length,
+      problemsApproved: allProblems.filter((p) => p.status === 'approved').length,
+      totalUsers: allUsers.length,
+      suspendedUsersCount: allUsers.filter((u) => u.status === 'suspended').length,
+      warnedUsersCount: allUsers.filter((u) => u.status === 'warned').length,
       storiesApproved: metrics.storiesSubmitted,
       aiTokensConsumed: 0,
       aiCircuitBreakerStatus: 'nominal',
@@ -44,10 +62,170 @@ router.get('/overview', requireAdmin, (req, res) => {
   });
 });
 
-// Moderation action endpoint
+// ============================================================================
+// PROBLEM WALL ADMINISTRATIVE CONTROLS
+// ============================================================================
+
+// GET all problems with complete author details & solutions
+router.get('/problems', requireAdmin, (req, res) => {
+  const problems = problemsStore.getAllForAdmin();
+  res.json({
+    success: true,
+    total: problems.length,
+    problems,
+  });
+});
+
+// Admin update any problem
+router.put('/problems/:id', requireAdmin, (req, res) => {
+  const { title, category, description, affectedUsers, tags } = req.body;
+  const result = problemsStore.updateProblem(
+    req.params.id,
+    { title, category, description, affectedUsers, tags },
+    req.user
+  );
+
+  if (!result.success) {
+    return res.status(404).json(result);
+  }
+
+  usersStore.logAudit({
+    action: 'ADMIN_UPDATE_PROBLEM',
+    problemId: req.params.id,
+    moderatorId: req.user.uid,
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json(result);
+});
+
+// Admin delete any problem
+router.delete('/problems/:id', requireAdmin, (req, res) => {
+  const result = problemsStore.deleteProblem(req.params.id, req.user);
+
+  if (!result.success) {
+    return res.status(404).json(result);
+  }
+
+  usersStore.logAudit({
+    action: 'ADMIN_DELETE_PROBLEM',
+    problemId: req.params.id,
+    moderatorId: req.user.uid,
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json(result);
+});
+
+// Admin change status or toggle resolved
+router.patch('/problems/:id/status', requireAdmin, (req, res) => {
+  const { status, isResolved } = req.body;
+  const result = problemsStore.adminSetStatus(req.params.id, status, isResolved);
+
+  if (!result.success) {
+    return res.status(404).json(result);
+  }
+
+  usersStore.logAudit({
+    action: 'ADMIN_STATUS_CHANGE',
+    problemId: req.params.id,
+    newStatus: status,
+    isResolved,
+    moderatorId: req.user.uid,
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json(result);
+});
+
+// ============================================================================
+// USER DIRECTORY & MODERATION AUTHORITIES
+// ============================================================================
+
+// List all registered users
+router.get('/users', requireAdmin, (req, res) => {
+  const users = usersStore.getAllUsers();
+  res.json({
+    success: true,
+    total: users.length,
+    users,
+  });
+});
+
+// Warn a user
+router.post('/users/:uid/warn', requireAdmin, (req, res) => {
+  const { reason } = req.body;
+  const result = usersStore.warnUser(req.params.uid, reason, req.user.uid);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    message: `Warning issued to user.`,
+    user: result.user,
+  });
+});
+
+// Suspend a user
+router.post('/users/:uid/suspend', requireAdmin, (req, res) => {
+  const { reason } = req.body;
+  const result = usersStore.suspendUser(req.params.uid, reason, req.user.uid);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    message: `User account suspended.`,
+    user: result.user,
+  });
+});
+
+// Reactivate a user
+router.post('/users/:uid/reactivate', requireAdmin, (req, res) => {
+  const result = usersStore.reactivateUser(req.params.uid, req.user.uid);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    message: `User account restored to active status.`,
+    user: result.user,
+  });
+});
+
+// ============================================================================
+// AUDIT LOGS & EVENT JOURNAL
+// ============================================================================
+
+router.get('/logs', requireAdmin, (req, res) => {
+  const logs = usersStore.getAuditLogs();
+  res.json({
+    success: true,
+    total: logs.length,
+    logs,
+  });
+});
+
+// Legacy moderation action endpoint for compatibility
 router.post('/moderation/:entityType/:id', requireAdmin, (req, res) => {
   const { entityType, id } = req.params;
-  const { action, reason } = req.body; // action: 'approve' | 'reject' | 'feature'
+  const { action, reason } = req.body;
+
+  usersStore.logAudit({
+    action: `MODERATE_${entityType.toUpperCase()}`,
+    entityType,
+    entityId: id,
+    actionDetail: action,
+    reason: reason || 'Verified compliant with community engineering guidelines.',
+    moderatorId: req.user.uid,
+    timestamp: new Date().toISOString(),
+  });
 
   res.json({
     success: true,

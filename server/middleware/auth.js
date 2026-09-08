@@ -90,35 +90,85 @@ export async function verifyToken(req, res, next) {
     }
   }
 
-  // Cryptographic verification for JWTs (Firebase ID tokens)
-  if (token.includes('.')) {
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return res.status(401).json({
-        success: false,
-        error: 'Malformed authentication token.',
-      });
+    // Cryptographic verification for JWTs (Firebase ID tokens)
+    if (token.startsWith('ev_session.')) {
+      const { verifySessionToken } = await import('../services/sessionService.js');
+      const sessionUser = verifySessionToken(token);
+      if (sessionUser) {
+        const email = (sessionUser.email || '').toLowerCase();
+        const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+        const userObj = {
+          uid: sessionUser.uid,
+          email,
+          name: sessionUser.name || (email ? email.split('@')[0] : 'Engineer'),
+          role: isAdmin ? 'admin' : 'member',
+          isAdmin,
+          isAnonymous: false,
+        };
+        const { usersStore } = await import('../services/usersStore.js');
+        const storeUser = usersStore.getOrCreateUser(userObj);
+        if (storeUser && storeUser.status === 'suspended') {
+          return res.status(403).json({
+            success: false,
+            error: 'Account suspended by administration for guideline violations.',
+            status: 'suspended',
+          });
+        }
+        req.user = {
+          ...userObj,
+          status: storeUser?.status || 'active',
+          warningReason: storeUser?.warningReason || null,
+          connectionCredits: storeUser?.connectionCredits ?? 5,
+        };
+        return next();
+      }
     }
 
-    // Attempt cryptographic RS256 verification against Google's public certificates
-    const { verifyFirebaseIdToken } = await import('../services/firebaseAdminService.js');
-    const verifiedUser = await verifyFirebaseIdToken(token);
+    if (token.includes('.')) {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        return res.status(401).json({
+          success: false,
+          error: 'Malformed authentication token.',
+        });
+      }
 
-    if (verifiedUser) {
-      const email = (verifiedUser.email || '').toLowerCase();
-      const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+      // Attempt cryptographic RS256 verification against Google's public certificates
+      const { verifyFirebaseIdToken } = await import('../services/firebaseAdminService.js');
+      const verifiedUser = await verifyFirebaseIdToken(token);
 
-      req.user = {
-        uid: verifiedUser.uid,
-        email,
-        name: verifiedUser.name || email.split('@')[0],
-        role: isAdmin ? 'admin' : 'member',
-        isAdmin,
-        isAnonymous: false,
-      };
-      return next();
+      if (verifiedUser) {
+        const email = (verifiedUser.email || '').toLowerCase();
+        const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+
+        const userObj = {
+          uid: verifiedUser.uid,
+          email,
+          name: verifiedUser.name || email.split('@')[0],
+          role: isAdmin ? 'admin' : 'member',
+          isAdmin,
+          isAnonymous: false,
+        };
+
+        const { usersStore } = await import('../services/usersStore.js');
+        const storeUser = usersStore.getOrCreateUser(userObj);
+        if (storeUser && storeUser.status === 'suspended') {
+          return res.status(403).json({
+            success: false,
+            error: 'Account suspended by administration for guideline violations.',
+            status: 'suspended',
+          });
+        }
+
+        req.user = {
+          ...userObj,
+          status: storeUser?.status || 'active',
+          warningReason: storeUser?.warningReason || null,
+          connectionCredits: storeUser?.connectionCredits ?? 5,
+        };
+        return next();
+      }
     }
-  }
 
   // Any unrecognized, forged, or unverified token is rejected with HTTP 401
   return res.status(401).json({
@@ -135,6 +185,13 @@ export function requireAuth(req, res, next) {
     return res.status(401).json({
       success: false,
       error: 'Authentication required. Please sign in with an authorized account.',
+    });
+  }
+  if (req.user.status === 'suspended') {
+    return res.status(403).json({
+      success: false,
+      error: 'Account suspended by administration for guideline violations.',
+      status: 'suspended',
     });
   }
   next();

@@ -202,6 +202,18 @@ export const guestStorage = {
  * Authentication client boundary
  * Strictly enforces real Firebase Authentication. No local mock admin bypasses.
  */
+const authStateSubscribers = new Set();
+
+function dispatchAuthState(user) {
+  for (const fn of authStateSubscribers) {
+    try {
+      fn(user);
+    } catch (e) {
+      console.warn('[AuthService] Error in auth state subscriber:', e);
+    }
+  }
+}
+
 export const authService = {
   get isConfigured() {
     return isFirebaseConfigured;
@@ -212,7 +224,7 @@ export const authService = {
   authorizedAdminEmail: AUTHORIZED_ADMIN_EMAIL,
 
   /**
-   * Returns current Firebase ID token.
+   * Returns current authentication token (Firebase ID token or HMAC session token).
    */
   async getIdToken(forceRefresh = false) {
     if (firebaseAuth?.currentUser) {
@@ -223,6 +235,10 @@ export const authService = {
         console.warn('[AuthService] Error retrieving Firebase ID token:', err.message);
       }
     }
+    if (typeof window !== 'undefined') {
+      const storedToken = localStorage.getItem('engineerverse_session_token_v1');
+      if (storedToken) return storedToken;
+    }
     return null;
   },
 
@@ -230,12 +246,46 @@ export const authService = {
    * Returns cached token if available.
    */
   getCachedToken() {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('engineerverse_session_token_v1') || null;
+    }
     return null;
   },
 
   /**
-   * Retrieves the current user profile from Firebase Auth.
-   * Returns unauthenticated guest if not signed in.
+   * Sets and persists authenticated local session token & user profile
+   */
+  async _setLocalAuthenticatedSession(user) {
+    if (!user) return null;
+    let finalUser = { ...user };
+    try {
+      const res = await fetch(getApiUrl('/api/auth/session'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token && typeof window !== 'undefined') {
+          localStorage.setItem('engineerverse_session_token_v1', data.token);
+        }
+        if (data.user) {
+          finalUser = { ...finalUser, ...data.user };
+        }
+      }
+    } catch (err) {
+      console.warn('[AuthService] Could not mint backend session token:', err);
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(finalUser));
+    }
+    dispatchAuthState(finalUser);
+    return finalUser;
+  },
+
+  /**
+   * Retrieves the current user profile from Firebase Auth or active session.
    */
   async getCurrentUser() {
     await ensureInitialized();
@@ -253,13 +303,46 @@ export const authService = {
       };
     }
 
-    const guestData = guestStorage.getJourney();
-    return {
-      uid: guestData?.guestId || 'guest_' + Math.random().toString(36).substring(2, 9),
-      isAnonymous: true,
-      displayName: guestData?.name || 'Guest Builder',
-      isAdmin: false,
-    };
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('engineerverse_authenticated_user_v1');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.uid && !parsed.isAnonymous) {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+
+    return null;
+  },
+
+  /**
+   * Fetches latest profile details (credits, warnings, role) from /api/auth/me
+   */
+  async refreshCurrentUser() {
+    const token = await this.getIdToken();
+    if (!token) return null;
+
+    try {
+      const res = await fetch(getApiUrl('/api/auth/me'), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(data.user));
+          }
+          dispatchAuthState(data.user);
+          return data.user;
+        }
+      }
+    } catch (err) {
+      console.warn('[AuthService] Failed to refresh user profile:', err);
+    }
+    return null;
   },
 
   /**
@@ -482,10 +565,12 @@ export const authService = {
       isAdmin: email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase(),
     };
     guestStorage.saveJourney({ name: localMember.displayName, email: localMember.email });
+    const sessionUser = await this._setLocalAuthenticatedSession(localMember);
+    const sessionToken = await this.getIdToken();
     return {
       success: true,
-      user: localMember,
-      idToken: null,
+      user: sessionUser || localMember,
+      idToken: sessionToken,
     };
   },
 
@@ -508,6 +593,7 @@ export const authService = {
           userProfile.displayName = displayName.trim();
         }
 
+        dispatchAuthState(userProfile);
         return {
           success: true,
           user: userProfile,
@@ -531,10 +617,12 @@ export const authService = {
       isAdmin: email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase(),
     };
     guestStorage.saveJourney({ name: localMember.displayName, email: localMember.email });
+    const sessionUser = await this._setLocalAuthenticatedSession(localMember);
+    const sessionToken = await this.getIdToken();
     return {
       success: true,
-      user: localMember,
-      idToken: null,
+      user: sessionUser || localMember,
+      idToken: sessionToken,
     };
   },
 
@@ -553,10 +641,12 @@ export const authService = {
     };
 
     guestStorage.saveJourney({ name: member.displayName, role: member.role });
+    const sessionUser = await this._setLocalAuthenticatedSession(member);
+    const sessionToken = await this.getIdToken();
     return {
       success: true,
-      user: member,
-      idToken: null,
+      user: sessionUser || member,
+      idToken: sessionToken,
     };
   },
 
@@ -572,6 +662,12 @@ export const authService = {
       }
     }
 
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('engineerverse_session_token_v1');
+      localStorage.removeItem('engineerverse_authenticated_user_v1');
+    }
+
+    dispatchAuthState(null);
     return { success: true };
   },
 
@@ -579,8 +675,18 @@ export const authService = {
    * Subscribes to authentication state changes.
    */
   onAuthStateChanged(callback) {
+    if (typeof callback !== 'function') return () => {};
+
+    authStateSubscribers.add(callback);
+
+    // Immediately trigger with current state
+    this.getCurrentUser().then((user) => {
+      callback(user);
+    });
+
+    let fbUnsubscribe = null;
     if (isFirebaseConfigured && firebaseAuth) {
-      return fbOnAuthStateChanged(firebaseAuth, async (user) => {
+      fbUnsubscribe = fbOnAuthStateChanged(firebaseAuth, async (user) => {
         if (user) {
           const idToken = await user.getIdToken().catch(() => null);
           const email = (user.email || '').toLowerCase();
@@ -594,16 +700,21 @@ export const authService = {
             isAdmin,
             idToken,
           };
-          callback(profile);
+          dispatchAuthState(profile);
         } else {
-          callback(null);
+          // If Firebase signed out, check if a local session is still active
+          const localUser = await this.getCurrentUser();
+          if (!localUser) {
+            dispatchAuthState(null);
+          }
         }
       });
     }
 
-    // Unconfigured environment: immediately notify null (unauthenticated)
-    callback(null);
-    return () => {};
+    return () => {
+      authStateSubscribers.delete(callback);
+      if (fbUnsubscribe) fbUnsubscribe();
+    };
   },
 
   /**

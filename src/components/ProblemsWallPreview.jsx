@@ -2,14 +2,15 @@
  * ENGINEERVERSE — The Problem Wall Component
  * Initiative: "India Still Has Problems. Engineers Still Have Work."
  * 
- * Features:
- * - Community members (Google, GitHub, Facebook, Yahoo, Email, Guest) can submit engineering challenges
- * - Transparent contributor attribution ("Submitted by [Name/Moniker]")
- * - Real-time upvoting / supporting
- * - Full client + server API synchronization with local storage persistence fallback
+ * Strict Integrity Guarantees:
+ * - Zero fake support counts. All counts reflect genuine authenticated user upvotes.
+ * - Submissions and support actions strictly require authenticated accounts.
+ * - Integrated Engineer Dashboard for authors to edit, update, delete, and mark problems as resolved.
+ * - Direct Solution Proposal & Handshake Connect flow between solvers and problem authors.
+ * - Full administrative moderation capabilities.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from './ui/Card.jsx';
 import { Badge } from './ui/Badge.jsx';
 import { Button } from './ui/Button.jsx';
@@ -21,112 +22,59 @@ import {
   Users,
   CheckCircle2,
   AlertCircle,
-  UserCheck,
   Sparkles,
-  Tag,
+  LayoutDashboard,
+  MessageSquare,
+  Edit3,
+  Trash2,
+  Check,
+  RotateCcw,
   Loader2,
+  ShieldCheck,
 } from 'lucide-react';
 import { analytics } from '../services/analytics.js';
 import { ANALYTICS_EVENTS } from '../config/analyticsEvents.js';
-import { getApiUrl } from '../config/api.js';
-import { authService } from '../services/firebaseClient.js';
+import { apiFetch } from '../config/api.js';
+import { authService, AUTHORIZED_ADMIN_EMAIL } from '../services/firebaseClient.js';
 import { AuthModal } from './auth/AuthModal.jsx';
+import { UserDashboard } from './dashboard/UserDashboard.jsx';
+import { ProposeSolutionModal } from './dashboard/ProposeSolutionModal.jsx';
 
-const initialSeedProblems = [
-  {
-    id: 'prob_clean_water_01',
-    title: 'Low-Cost Arsenic & Fluoride Water Testing for Rural Borewells',
-    category: 'Environment',
-    affectedUsers: 'Over 40 million citizens across Gangetic plains & arid belts',
-    description: 'Groundwater in several districts exceeds safe arsenic and fluoride limits. Commercial chemical test strips are costly and perishable. We need an open-hardware spectrophotometric sensor under ₹500 with zero toxic reagent waste.',
-    supporterCount: 428,
-    tags: ['Water', 'Sensors', 'Rural Health'],
-    submittedBy: 'Shree Labs Collective',
-  },
-  {
-    id: 'prob_cold_storage_02',
-    title: 'Solar PCM Micro-Cold Rooms for Perishable Harvests',
-    category: 'Agriculture',
-    affectedUsers: 'Smallholder tomato & onion farmers losing 30% crop to heat',
-    description: 'Grid outages in rural mandis trigger distress selling at 10% value. Design an off-grid phase-change thermal cool-room maintaining 4°C for 36 hours of continuous cloud cover without diesel generators.',
-    supporterCount: 512,
-    tags: ['Agriculture', 'Thermal Storage', 'Solar'],
-    submittedBy: 'Agritech Working Group',
-  },
-  {
-    id: 'prob_assistive_screen_03',
-    title: 'Sub-$50 Dynamic Refreshable Braille Display',
-    category: 'Accessibility',
-    affectedUsers: 'Over 10 million visually impaired students and coders',
-    description: 'Commercial 40-cell piezo Braille displays cost over $2,000. Can electromagnetic micro-solenoids or microfluidics drop the BOM cost below $50 to make digital education universally accessible?',
-    supporterCount: 689,
-    tags: ['Accessibility', 'Micro-actuators', 'Embedded'],
-    submittedBy: 'Assistive Tech Lab',
-  },
-  {
-    id: 'prob_mesh_disaster_04',
-    title: 'Autonomous Drone-Droppable Emergency Mesh Relays',
-    category: 'Infrastructure',
-    affectedUsers: 'Himalayan and coastal communities cut off during cloudbursts',
-    description: 'When towers drown, rescuers work blind. Solar-powered LoRa packet repeaters that form self-healing mesh networks to forward emergency SMS and GPS without cellular networks.',
-    supporterCount: 394,
-    tags: ['Disaster Relief', 'LoRa', 'Mesh Network'],
-    submittedBy: 'Disaster Resilience Group',
-  },
-];
+const LOCAL_STORAGE_PROBLEMS_KEY = 'engineerverse_community_problems_v2';
 
-const LOCAL_STORAGE_PROBLEMS_KEY = 'engineerverse_community_problems_v1';
-const LOCAL_STORAGE_SUPPORT_KEY = 'engineerverse_supported_problem_ids_v1';
-
-export function ProblemsWallPreview() {
-  const [problems, setProblems] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem(LOCAL_STORAGE_PROBLEMS_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {
-        // storage fallback
-      }
-    }
-    return initialSeedProblems;
-  });
-
+export function ProblemsWallPreview({ onOpenAdmin }) {
+  const [problems, setProblems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [supportedIds, setSupportedIds] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem(LOCAL_STORAGE_SUPPORT_KEY);
-        if (saved) return new Set(JSON.parse(saved));
-      } catch {
-        // ignore
-      }
-    }
-    return new Set();
-  });
+  const [filterResolved, setFilterResolved] = useState('all'); // 'all' | 'active' | 'resolved'
 
+  // Modals state
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
-  const [submitSuccessMessage, setSubmitSuccessMessage] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Authentication status & modal
-  const [currentUser, setCurrentUser] = useState(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authPromptReason, setAuthPromptReason] = useState(null);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [proposeSolutionProblem, setProposeSolutionProblem] = useState(null);
+
+  // Status & Feedback Messages
+  const [feedbackMessage, setFeedbackMessage] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [supportingProblemId, setSupportingProblemId] = useState(null);
+
+  // Authentication status
+  const [currentUser, setCurrentUser] = useState(null);
 
   // New problem form fields
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState('Agriculture');
   const [newAffectedUsers, setNewAffectedUsers] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newCustomAttribution, setNewCustomAttribution] = useState('');
+  const [newTags, setNewTags] = useState('');
 
   // Categories list
-  const categories = ['All', 'Environment', 'Agriculture', 'Accessibility', 'Infrastructure', 'Healthcare', 'Education'];
+  const categories = ['All', 'Environment', 'Agriculture', 'Accessibility', 'Infrastructure', 'Healthcare', 'Education', 'Hardware'];
 
-  // Subscribe to auth state
+  // Subscribe to authentication changes
   useEffect(() => {
     const unsub = authService.onAuthStateChanged((user) => {
       setCurrentUser(user);
@@ -134,149 +82,243 @@ export function ProblemsWallPreview() {
     return () => unsub();
   }, []);
 
-  // Fetch from server API on mount if available
-  useEffect(() => {
-    let isMounted = true;
-    async function loadServerProblems() {
-      try {
-        const res = await fetch(getApiUrl('/api/problems'));
-        if (!res.ok) return;
+  // Fetch problems from server API
+  const loadProblems = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/problems');
+      if (res.ok) {
         const data = await res.json();
-        if (data.success && Array.isArray(data.problems) && data.problems.length > 0) {
-          if (isMounted) {
-            // Merge unique server problems with local state
-            setProblems((prev) => {
-              const map = new Map();
-              data.problems.forEach((p) => map.set(p.id, p));
-              prev.forEach((p) => {
-                if (!map.has(p.id)) map.set(p.id, p);
-              });
-              const merged = Array.from(map.values());
-              try {
-                localStorage.setItem(LOCAL_STORAGE_PROBLEMS_KEY, JSON.stringify(merged));
-              } catch {}
-              return merged;
-            });
-          }
+        if (data.success && Array.isArray(data.problems)) {
+          setProblems(data.problems);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_PROBLEMS_KEY, JSON.stringify(data.problems));
+          } catch {}
         }
-      } catch {
-        // offline or mock fallback
       }
+    } catch (err) {
+      console.warn('[ProblemWall] Failed to fetch server problems, falling back to cache:', err);
+      try {
+        const cached = localStorage.getItem(LOCAL_STORAGE_PROBLEMS_KEY);
+        if (cached) setProblems(JSON.parse(cached));
+      } catch {}
+    } finally {
+      setLoading(false);
     }
-    loadServerProblems();
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
-  // Save supported IDs to localStorage
+  useEffect(() => {
+    loadProblems();
+  }, [loadProblems]);
+
+  // Re-fetch when user signs in or out to update hasSupported states
+  useEffect(() => {
+    if (currentUser) {
+      loadProblems();
+    }
+  }, [currentUser?.uid, loadProblems]);
+
+  // Handle authenticated support action
   const handleSupport = async (id) => {
-    if (supportedIds.has(id)) return;
-
-    const nextSupported = new Set([...supportedIds, id]);
-    setSupportedIds(nextSupported);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_SUPPORT_KEY, JSON.stringify([...nextSupported]));
-    } catch {}
-
-    setProblems((prev) => {
-      const updated = prev.map((p) =>
-        p.id === id ? { ...p, supporterCount: (p.supporterCount || 0) + 1 } : p
-      );
-      try {
-        localStorage.setItem(LOCAL_STORAGE_PROBLEMS_KEY, JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-
-    // Notify backend
-    try {
-      await fetch(getApiUrl(`/api/problems/${id}/support`), { method: 'POST' });
-    } catch {
-      // offline fallback
+    if (!currentUser || currentUser.isAnonymous) {
+      setAuthPromptReason('Please sign in to support community challenges on The Problem Wall.');
+      setIsAuthModalOpen(true);
+      return;
     }
 
-    analytics.track(ANALYTICS_EVENTS.PROBLEM_SUPPORT, { problemId: id });
+    setSupportingProblemId(id);
+    try {
+      const res = await apiFetch(`/api/problems/${id}/support`, {
+        method: 'POST',
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setProblems((prev) =>
+          prev.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  hasSupported: data.supported,
+                  supporterCount: data.supporterCount,
+                }
+              : p
+          )
+        );
+
+        setFeedbackMessage({
+          type: 'success',
+          text: data.supported ? 'Verified support registered!' : 'Support removed.',
+        });
+        setTimeout(() => setFeedbackMessage(null), 3000);
+
+        analytics.track(ANALYTICS_EVENTS.PROBLEM_SUPPORT, {
+          problemId: id,
+          supported: data.supported,
+        });
+      } else {
+        const err = await res.json();
+        setFeedbackMessage({ type: 'error', text: err.error || 'Failed to register support.' });
+      }
+    } catch (err) {
+      setFeedbackMessage({ type: 'error', text: 'Network error updating support.' });
+    } finally {
+      setSupportingProblemId(null);
+    }
   };
 
-  const getAttributionName = () => {
-    if (newCustomAttribution.trim()) return newCustomAttribution.trim();
-    if (currentUser?.displayName) return currentUser.displayName;
-    if (currentUser?.email) return currentUser.email.split('@')[0];
-    return 'Community Builder';
+  // Open problem submission modal (auth-gated)
+  const handleOpenSubmit = () => {
+    if (!currentUser || currentUser.isAnonymous) {
+      setAuthPromptReason('Please sign in with an authenticated account to submit a challenge to The Problem Wall.');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setIsSubmitModalOpen(true);
   };
 
+  // Open propose solution modal (auth-gated)
+  const handleOpenProposeSolution = (problem) => {
+    if (!currentUser || currentUser.isAnonymous) {
+      setAuthPromptReason('Please sign in to propose an engineering solution and connect with the author.');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setProposeSolutionProblem(problem);
+  };
+
+  // Open dashboard (auth-gated)
+  const handleOpenDashboard = () => {
+    if (!currentUser || currentUser.isAnonymous) {
+      setAuthPromptReason('Please sign in to view your Engineer Dashboard.');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setIsDashboardOpen(true);
+  };
+
+  // Handle authenticated problem submission
   const handleSubmitProblem = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDescription.trim()) return;
 
+    if (!currentUser || currentUser.isAnonymous) {
+      setIsSubmitModalOpen(false);
+      setAuthPromptReason('Please sign in to submit your problem.');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const contributorName = getAttributionName();
-
-    const newProb = {
-      id: 'prob_' + Math.random().toString(36).substring(2, 10),
-      title: newTitle.trim(),
-      category: newCategory,
-      affectedUsers: newAffectedUsers.trim() || 'Community & Public',
-      description: newDescription.trim(),
-      supporterCount: 1,
-      tags: [newCategory, 'Community'],
-      submittedBy: contributorName,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Optimistically add to state & localStorage
-    const nextProblems = [newProb, ...problems];
-    setProblems(nextProblems);
     try {
-      localStorage.setItem(LOCAL_STORAGE_PROBLEMS_KEY, JSON.stringify(nextProblems));
-    } catch {}
+      const tagsArray = newTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
 
-    const nextSupported = new Set([...supportedIds, newProb.id]);
-    setSupportedIds(nextSupported);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_SUPPORT_KEY, JSON.stringify([...nextSupported]));
-    } catch {}
-
-    // Post to API server
-    try {
-      await fetch(getApiUrl('/api/problems'), {
+      const res = await apiFetch('/api/problems', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: newProb.title,
-          category: newProb.category,
-          affectedUsers: newProb.affectedUsers,
-          description: newProb.description,
-          submittedBy: contributorName,
-          tags: newProb.tags,
+          title: newTitle.trim(),
+          category: newCategory,
+          affectedUsers: newAffectedUsers.trim() || 'Community & Public',
+          description: newDescription.trim(),
+          tags: tagsArray.length > 0 ? tagsArray : [newCategory, 'Community'],
         }),
       });
+
+      const data = await res.json();
+      if (res.ok && data.success && data.problem) {
+        setProblems((prev) => [data.problem, ...prev]);
+        setIsSubmitModalOpen(false);
+        setFeedbackMessage({
+          type: 'success',
+          text: 'Challenge submitted successfully! It is now live on The Problem Wall and in your Dashboard.',
+        });
+        setTimeout(() => setFeedbackMessage(null), 5000);
+
+        // Reset form
+        setNewTitle('');
+        setNewAffectedUsers('');
+        setNewDescription('');
+        setNewTags('');
+
+        analytics.track(ANALYTICS_EVENTS.PROBLEM_SUBMITTED, {
+          title: newTitle,
+          category: newCategory,
+          submittedBy: currentUser.displayName || currentUser.email,
+        });
+      } else {
+        setFeedbackMessage({ type: 'error', text: data.error || 'Failed to submit problem.' });
+      }
     } catch (err) {
-      console.warn('Could not post to server endpoint, stored locally:', err);
+      setFeedbackMessage({ type: 'error', text: 'Network error submitting problem.' });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
-    setIsSubmitModalOpen(false);
-    setSubmitSuccessMessage(`Problem added to The Problem Wall! Credited to "${contributorName}".`);
-
-    analytics.track(ANALYTICS_EVENTS.PROBLEM_SUBMITTED, {
-      title: newTitle,
-      category: newCategory,
-      submittedBy: contributorName,
-    });
-
-    setNewTitle('');
-    setNewAffectedUsers('');
-    setNewDescription('');
-    setNewCustomAttribution('');
-
-    setTimeout(() => setSubmitSuccessMessage(null), 6000);
   };
 
+  // Quick toggle resolved status (Author or Admin)
+  const handleToggleResolve = async (problemId, currentResolved) => {
+    try {
+      const res = await apiFetch(`/api/problems/${problemId}/resolve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isResolved: !currentResolved }),
+      });
+
+      if (res.ok) {
+        setProblems((prev) =>
+          prev.map((p) =>
+            p.id === problemId
+              ? {
+                  ...p,
+                  isResolved: !currentResolved,
+                  resolvedAt: !currentResolved ? new Date().toISOString() : null,
+                }
+              : p
+          )
+        );
+        setFeedbackMessage({
+          type: 'success',
+          text: !currentResolved ? 'Problem marked as Resolved!' : 'Problem marked as Active.',
+        });
+        setTimeout(() => setFeedbackMessage(null), 4000);
+      }
+    } catch (err) {
+      setFeedbackMessage({ type: 'error', text: 'Failed to update resolution status.' });
+    }
+  };
+
+  // Quick delete problem (Author or Admin)
+  const handleDeleteProblem = async (problemId) => {
+    if (!window.confirm('Are you sure you want to delete this problem from The Problem Wall?')) return;
+
+    try {
+      const res = await apiFetch(`/api/problems/${problemId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProblems((prev) => prev.filter((p) => p.id !== problemId));
+        setFeedbackMessage({ type: 'success', text: 'Problem removed successfully.' });
+        setTimeout(() => setFeedbackMessage(null), 4000);
+      }
+    } catch (err) {
+      setFeedbackMessage({ type: 'error', text: 'Failed to delete problem.' });
+    }
+  };
+
+  // Filter problems by Category, Search Query, and Resolved status
   const filteredProblems = problems.filter((prob) => {
     const matchesCategory = selectedCategory === 'All' || prob.category === selectedCategory;
+
+    const matchesStatus =
+      filterResolved === 'all'
+        ? true
+        : filterResolved === 'resolved'
+          ? Boolean(prob.isResolved)
+          : !prob.isResolved;
+
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
       !q ||
@@ -285,18 +327,20 @@ export function ProblemsWallPreview() {
       prob.submittedBy?.toLowerCase().includes(q) ||
       prob.tags?.some((t) => t.toLowerCase().includes(q));
 
-    return matchesCategory && matchesSearch;
+    return matchesCategory && matchesStatus && matchesSearch;
   });
+
+  const isAdmin = currentUser?.email && currentUser.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
 
   return (
     <div className="w-full space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      {/* Header Section */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Badge variant="purple" size="xs">Humanity Pillar</Badge>
             <span className="text-xs text-purple-400 font-bold uppercase tracking-wider">
-              Community Engineering
+              Verified Community Engineering
             </span>
           </div>
           <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
@@ -304,16 +348,27 @@ export function ProblemsWallPreview() {
           </h2>
           <p className="text-sm text-slate-300 mt-1 max-w-2xl font-medium">
             <span className="text-purple-300 font-bold">India Still Has Problems. Engineers Still Have Work.</span>{' '}
-            Curated, community-submitted engineering challenges awaiting builders, architects, and inventors.
+            Authentic community-submitted engineering challenges. Zero fake metrics—all votes and submissions are verified.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Header Action Buttons: My Dashboard & Submit Problem */}
+        <div className="flex items-center gap-3 shrink-0">
+          <Button
+            variant="outline"
+            size="md"
+            icon={LayoutDashboard}
+            onClick={handleOpenDashboard}
+            className="cursor-pointer border-purple-600/40 text-purple-200 hover:bg-purple-900/30"
+          >
+            My Dashboard
+          </Button>
+
           <Button
             variant="primary"
             size="md"
             icon={PlusCircle}
-            onClick={() => setIsSubmitModalOpen(true)}
+            onClick={handleOpenSubmit}
             className="cursor-pointer shadow-[0_0_20px_rgba(168,85,247,0.3)]"
           >
             Submit a Problem
@@ -321,15 +376,50 @@ export function ProblemsWallPreview() {
         </div>
       </div>
 
-      {submitSuccessMessage && (
-        <div className="p-4 rounded-xl bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{submitSuccessMessage}</span>
+      {/* Real Integrity Callout Badge */}
+      <div className="px-4 py-2.5 rounded-xl bg-purple-950/40 border border-purple-800/40 flex items-center justify-between text-xs text-slate-300">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
+          <span>
+            <strong className="text-white">Honest Metrics:</strong> Supporter counts reflect genuine authenticated engineers. Submissions and upvotes require verified community identity.
+          </span>
+        </div>
+        {currentUser && !currentUser.isAnonymous ? (
+          <span className="text-emerald-400 font-medium hidden sm:inline">
+            Signed in as {currentUser.displayName || currentUser.email}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsAuthModalOpen(true)}
+            className="text-purple-300 hover:text-white underline cursor-pointer font-medium"
+          >
+            Sign in to participate
+          </button>
+        )}
+      </div>
+
+      {/* Feedback Alert Message */}
+      {feedbackMessage && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center gap-2 animate-in fade-in border ${
+            feedbackMessage.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+              : 'bg-red-950/60 border-red-500/50 text-red-200'
+          }`}
+        >
+          {feedbackMessage.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+          )}
+          <span>{feedbackMessage.text}</span>
         </div>
       )}
 
-      {/* Filter and Search Bar */}
+      {/* Filter, Search & Status Bar */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 bg-purple-950/20 p-4 rounded-2xl border border-purple-900/30">
+        {/* Categories */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-2 lg:pb-0 scrollbar-none">
           {categories.map((cat) => (
             <TabPill
@@ -342,85 +432,204 @@ export function ProblemsWallPreview() {
           ))}
         </div>
 
-        <div className="relative min-w-[240px] sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search problems, topics, contributors..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-900/90 border border-purple-900/40 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition"
-          />
+        {/* Search & Resolution Status Filter */}
+        <div className="flex items-center gap-2 w-full lg:w-auto">
+          {/* Status filter toggle */}
+          <div className="flex items-center bg-black/40 rounded-xl p-1 border border-purple-900/40 shrink-0">
+            <button
+              type="button"
+              onClick={() => setFilterResolved('all')}
+              className={`px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
+                filterResolved === 'all'
+                  ? 'bg-purple-900/60 text-white font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterResolved('active')}
+              className={`px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
+                filterResolved === 'active'
+                  ? 'bg-purple-900/60 text-white font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterResolved('resolved')}
+              className={`px-2.5 py-1 text-xs rounded-lg transition cursor-pointer ${
+                filterResolved === 'resolved'
+                  ? 'bg-purple-900/60 text-white font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Resolved
+            </button>
+          </div>
+
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-4 h-4 text-purple-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search challenges, keywords, tags..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-purple-950/40 border border-purple-900/40 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500"
+            />
+          </div>
         </div>
       </div>
 
       {/* Problems Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredProblems.map((problem) => {
-          const isSupported = supportedIds.has(problem.id);
-          return (
-            <Card key={problem.id} className="p-6 flex flex-col justify-between space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400 bg-purple-950/60 px-2.5 py-0.5 rounded-full border border-purple-800/40">
-                    {problem.category}
-                  </span>
-                  <div className="flex items-center gap-1 text-xs text-slate-400">
-                    <Users className="w-3.5 h-3.5 text-purple-400" />
-                    <span className="text-[11px] truncate max-w-[180px]">{problem.affectedUsers}</span>
+      {loading ? (
+        <div className="py-24 flex flex-col items-center justify-center gap-3 text-slate-400">
+          <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+          <span className="text-xs">Loading verified engineering challenges...</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {filteredProblems.map((problem) => {
+            const isAuthor = currentUser && currentUser.uid === problem.authorId;
+            const canManage = isAuthor || isAdmin;
+
+            return (
+              <Card key={problem.id} className="p-6 flex flex-col justify-between space-y-4 bg-[#08081a]/90 border-purple-900/40">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400 bg-purple-950/60 px-2.5 py-0.5 rounded-full border border-purple-800/40">
+                      {problem.category}
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      {problem.isResolved ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-600/40">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          Resolved
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1 text-xs text-slate-400">
+                          <Users className="w-3.5 h-3.5 text-purple-400" />
+                          <span className="text-[11px] truncate max-w-[160px]">{problem.affectedUsers}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
+                    {problem.title}
+                  </h3>
+
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                    {problem.description}
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    {problem.tags?.map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-purple-300 border border-white/10"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Solutions & Solvers indicator */}
+                  {problem.solutionsCount > 0 && (
+                    <div className="p-2 rounded-lg bg-purple-950/30 border border-purple-900/30 flex items-center justify-between text-[11px] text-purple-300">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                        {problem.solutionsCount} Technical {problem.solutionsCount === 1 ? 'Proposal' : 'Proposals'} Submitted
+                      </span>
+                      {problem.connectedSolversCount > 0 && (
+                        <Badge variant="emerald" size="xs">
+                          {problem.connectedSolversCount} Connected
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Card Actions & Footer */}
+                <div className="pt-4 border-t border-purple-950/50 space-y-3">
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <div className="flex items-center gap-1.5 text-slate-400 min-w-0">
+                      <span>Submitted by:</span>
+                      <span className="font-semibold text-purple-300 truncate max-w-[180px]">
+                        {problem.submittedBy || 'Community Engineer'}
+                      </span>
+                    </div>
+
+                    {/* Author/Admin Management Shortcuts */}
+                    {canManage && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleResolve(problem.id, problem.isResolved)}
+                          className={`px-2 py-0.5 text-[10px] font-semibold rounded border transition cursor-pointer ${
+                            problem.isResolved
+                              ? 'bg-amber-950/50 border-amber-600/40 text-amber-300'
+                              : 'bg-emerald-950/50 border-emerald-600/40 text-emerald-300'
+                          }`}
+                          title={problem.isResolved ? 'Reopen as Active' : 'Mark as Resolved'}
+                        >
+                          {problem.isResolved ? 'Reopen' : 'Resolve'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProblem(problem.id)}
+                          className="p-1 rounded text-red-400 hover:bg-red-950/40 transition cursor-pointer"
+                          title="Delete problem"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons: Support + Propose Solution / Connect */}
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSupport(problem.id)}
+                      disabled={supportingProblemId === problem.id}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                        problem.hasSupported
+                          ? 'bg-purple-600 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                          : 'bg-purple-950/60 hover:bg-purple-900/60 text-purple-200 border border-purple-800/40'
+                      }`}
+                      title={currentUser ? 'Support this challenge' : 'Sign in to support'}
+                    >
+                      <ThumbsUp className="w-3.5 h-3.5" />
+                      <span>{problem.hasSupported ? 'Supported' : 'Support'}</span>
+                      <span className="ml-0.5 font-mono text-purple-200 font-bold">
+                        ({problem.supporterCount || 0})
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenProposeSolution(problem)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/5 hover:bg-white/10 text-purple-200 border border-purple-700/40 transition cursor-pointer"
+                      title="Propose an engineering approach or connect with the author"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Propose Solution & Connect</span>
+                    </button>
                   </div>
                 </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
-                <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
-                  {problem.title}
-                </h3>
-
-                <p className="text-xs text-slate-300 leading-relaxed font-sans">
-                  {problem.description}
-                </p>
-
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  {problem.tags?.map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-purple-300 border border-white/10"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Card Footer: Contributor Attribution & Upvote */}
-              <div className="pt-4 border-t border-purple-950/40 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-300 min-w-0">
-                  <span className="text-slate-500">Submitted by:</span>
-                  <span className="font-semibold text-purple-300 truncate max-w-[180px]">
-                    {problem.submittedBy || 'Community Engineer'}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleSupport(problem.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer shrink-0 ${
-                    isSupported
-                      ? 'bg-purple-600 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)]'
-                      : 'bg-purple-950/50 hover:bg-purple-900/60 text-purple-200 border border-purple-800/40'
-                  }`}
-                >
-                  <ThumbsUp className="w-3.5 h-3.5" />
-                  <span>{isSupported ? 'Supported' : 'Support'}</span>
-                  <span className="ml-1 opacity-80 font-mono">({problem.supporterCount || 0})</span>
-                </button>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      {filteredProblems.length === 0 && (
-        <div className="text-center py-12 border border-dashed border-purple-900/50 rounded-2xl p-8 space-y-3">
+      {filteredProblems.length === 0 && !loading && (
+        <div className="text-center py-16 border border-dashed border-purple-900/50 rounded-2xl p-8 space-y-3">
           <p className="text-slate-400 text-sm">No engineering challenges found matching your criteria.</p>
           <Button
             variant="outline"
@@ -428,6 +637,7 @@ export function ProblemsWallPreview() {
             onClick={() => {
               setSelectedCategory('All');
               setSearchQuery('');
+              setFilterResolved('all');
             }}
           >
             Clear Filters
@@ -435,159 +645,158 @@ export function ProblemsWallPreview() {
         </div>
       )}
 
-      {/* Submission Modal with Attribution */}
+      {/* Problem Submission Modal (Auth Gated) */}
       {isSubmitModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <form
-            onSubmit={handleSubmitProblem}
-            className="bg-[#09091f] border border-purple-800/60 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl"
-          >
-            <div className="flex items-center justify-between border-b border-purple-950/60 pb-3">
-              <div className="flex items-center gap-2">
-                <PlusCircle className="w-5 h-5 text-purple-400" />
-                <h3 className="text-lg font-bold text-white">
-                  Add Problem to The Problem Wall
-                </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-xl bg-[#08081a] border border-purple-800/60 rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400 bg-purple-950/60 px-2.5 py-0.5 rounded-full border border-purple-800/40">
+                  Verified Contribution
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsSubmitModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1"
-              >
-                ✕
-              </button>
+              <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                Submit an Engineering Challenge
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Submitted under verified profile:{' '}
+                <span className="text-purple-300 font-semibold">
+                  {currentUser?.displayName || currentUser?.email}
+                </span>
+              </p>
             </div>
 
-            {/* Contributor identity banner */}
-            <div className="p-3 bg-purple-950/40 rounded-xl border border-purple-800/50 flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-7 h-7 rounded-full bg-purple-700/60 flex items-center justify-center font-bold text-white uppercase text-xs shrink-0">
-                  {(currentUser?.displayName || currentUser?.email || 'U').charAt(0)}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-white font-medium truncate">
-                    Credited to: <strong className="text-purple-300">{getAttributionName()}</strong>
-                  </div>
-                  <div className="text-[10px] text-slate-400 truncate">
-                    {currentUser?.email ? currentUser.email : 'Guest / Community Contributor'}
-                  </div>
-                </div>
-              </div>
-
-              {!currentUser && (
-                <button
-                  type="button"
-                  onClick={() => setIsAuthModalOpen(true)}
-                  className="text-[11px] text-purple-300 hover:text-purple-100 underline cursor-pointer shrink-0"
-                >
-                  Sign In
-                </button>
-              )}
-            </div>
-
-            {/* Problem Title */}
-            <div className="space-y-1 text-xs">
-              <label className="text-purple-300 font-semibold">Problem Title *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Decentralized Graywater Recycling for Urban Apartments"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-black/40 border border-purple-950/60 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-
-            {/* Category & Affected Population */}
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="space-y-1">
-                <label className="text-purple-300 font-semibold">Category *</label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-black/40 border border-purple-950/60 text-white focus:outline-none focus:border-purple-500"
-                >
-                  <option value="Environment">Environment</option>
-                  <option value="Agriculture">Agriculture</option>
-                  <option value="Accessibility">Accessibility</option>
-                  <option value="Infrastructure">Infrastructure</option>
-                  <option value="Healthcare">Healthcare</option>
-                  <option value="Education">Education</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-purple-300 font-semibold">Affected Population</label>
+            <form onSubmit={handleSubmitProblem} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-200 mb-1">
+                  Challenge Title <span className="text-red-400">*</span>
+                </label>
                 <input
                   type="text"
-                  placeholder="e.g. 5,000 households"
-                  value={newAffectedUsers}
-                  onChange={(e) => setNewAffectedUsers(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-black/40 border border-purple-950/60 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  placeholder="e.g. Solar-Powered Thermal Cold Storage for Perishable Crops"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl bg-purple-950/30 border border-purple-800/40 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500"
+                  required
                 />
               </div>
-            </div>
 
-            {/* Custom Contributor Credit Name (optional override) */}
-            <div className="space-y-1 text-xs">
-              <label className="text-purple-300 font-semibold">
-                Display Attribution Credit (Optional)
-              </label>
-              <input
-                type="text"
-                placeholder={currentUser?.displayName || 'e.g. Vikramaditya & Team Aero'}
-                value={newCustomAttribution}
-                onChange={(e) => setNewCustomAttribution(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-black/40 border border-purple-950/60 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
-              <span className="text-[10px] text-slate-400">
-                This name will be displayed at the bottom of the card on The Problem Wall.
-              </span>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-200 mb-1">
+                    Discipline / Category <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-purple-950/30 border border-purple-800/40 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    {categories.filter((c) => c !== 'All').map((cat) => (
+                      <option key={cat} value={cat} className="bg-[#0b0b20]">
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            {/* Detailed Description */}
-            <div className="space-y-1 text-xs">
-              <label className="text-purple-300 font-semibold">Detailed Description & Technical Constraints *</label>
-              <textarea
-                required
-                rows={3}
-                placeholder="Explain the technical bottleneck, existing failures, and constraints that make this unsolved..."
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-black/40 border border-purple-950/60 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-200 mb-1">
+                    Affected Community / Population
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 5,000 smallholder farmers in Maharashtra"
+                    value={newAffectedUsers}
+                    onChange={(e) => setNewAffectedUsers(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-purple-950/30 border border-purple-800/40 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
 
-            <div className="pt-3 border-t border-purple-950/60 flex items-center justify-between text-xs">
-              <span className="text-slate-400">Community Attribution Active</span>
-              <div className="flex gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setIsSubmitModalOpen(false)}>
+              <div>
+                <label className="block text-xs font-semibold text-slate-200 mb-1">
+                  Problem Description & Requirements <span className="text-red-400">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  placeholder="Explain the real-world challenge, technical constraints, why current commercial solutions fail, and target BOM/cost goals..."
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-purple-950/30 border border-purple-800/40 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500 resize-none font-sans"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-200 mb-1">
+                  Engineering Tags (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Solar, IoT, Embedded, Microcontrollers, Frugal"
+                  value={newTags}
+                  onChange={(e) => setNewTags(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl bg-purple-950/30 border border-purple-800/40 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsSubmitModalOpen(false)}
+                >
                   Cancel
                 </Button>
-                <Button size="sm" variant="primary" type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? (
-                    <span className="flex items-center gap-1">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Submitting...</span>
-                    </span>
-                  ) : (
-                    <span>Submit to Wall</span>
-                  )}
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  disabled={isSubmitting || !newTitle.trim() || !newDescription.trim()}
+                  className="shadow-[0_0_15px_rgba(168,85,247,0.3)]"
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit to Problem Wall'}
                 </Button>
               </div>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
-      {/* Auth Modal Trigger */}
+      {/* User Dashboard Modal */}
+      <UserDashboard
+        isOpen={isDashboardOpen}
+        onClose={() => setIsDashboardOpen(false)}
+        onOpenSubmitModal={() => setIsSubmitModalOpen(true)}
+        onOpenAdmin={onOpenAdmin}
+      />
+
+      {/* Propose Solution Modal */}
+      <ProposeSolutionModal
+        problem={proposeSolutionProblem}
+        isOpen={Boolean(proposeSolutionProblem)}
+        onClose={() => setProposeSolutionProblem(null)}
+        onSuccess={(msg) => {
+          setFeedbackMessage({ type: 'success', text: msg });
+          setTimeout(() => setFeedbackMessage(null), 5000);
+          loadProblems();
+        }}
+      />
+
+      {/* Global Auth Modal for Gated Actions */}
       <AuthModal
         isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        currentUser={currentUser}
-        onAuthSuccess={(user) => {
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setAuthPromptReason(null);
+        }}
+        promptReason={authPromptReason}
+        onSuccess={(user) => {
           setCurrentUser(user);
           setIsAuthModalOpen(false);
+          setAuthPromptReason(null);
+          loadProblems();
         }}
       />
     </div>

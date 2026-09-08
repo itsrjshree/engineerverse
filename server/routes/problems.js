@@ -3,87 +3,38 @@
  * Long-term community initiative: "India Still Has Problems. Engineers Still Have Work."
  * Note: Named "The Problem Wall" per section 12 of product architecture.
  * Unlimited dynamic capacity (from 10 to 100,000+ problems). Zero artificial 100-limit.
+ * 
+ * Strict Security Guarantees:
+ * - Zero fake support counts. All counts reflect genuine authenticated user interactions.
+ * - Submissions, support actions, and solution proposals strictly require authentication.
+ * - Problem authors and administrators can edit, update, delete, and mark problems as resolved.
+ * - Secure connection handshake system between problem submitters and engineers.
  */
 
 import { Router } from 'express';
+import { verifyToken, requireAuth } from '../middleware/auth.js';
 import { submissionRateLimiter } from '../middleware/rateLimiter.js';
+import { problemsStore } from '../services/problemsStore.js';
 
 const router = Router();
 
-// In-memory store initialized with verified seed engineering challenges
-// supporterCounts start at 0 to uphold honest community data (Rule 13: Zero fake metrics)
-const initialCuratedProblems = [
-  {
-    id: 'prob_clean_water_01',
-    title: 'Low-Cost Arsenic & Fluoride Water Testing for Rural Borewells',
-    category: 'Environment & Water',
-    affectedUsers: 'Over 40 million citizens across Gangetic plains & arid belts',
-    description: 'Groundwater in several districts exceeds safe arsenic and fluoride limits. Current chemical testing strips are either costly, fragile, or require laboratory titration. We need an open-hardware, reusable spectrophotometric or electrochemical sensor kit costing under ₹500.',
-    status: 'approved',
-    supporterCount: 0,
-    submittedBy: 'Shree Labs Engineering Collective',
-    tags: ['Water', 'IoT', 'Hardware', 'Rural'],
-    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-  },
-  {
-    id: 'prob_cold_storage_02',
-    title: 'Decentralized Solar-Powered Cold Storage for Smallholder Farmers',
-    category: 'Agriculture',
-    affectedUsers: 'Perishable tomato & onion cultivators losing 30% crop post-harvest',
-    description: 'Grid outages in rural mandis force distress sales. Design an energy-dense phase-change material (PCM) cool-room powered by solar PV that maintains 4°C for 36 hours of continuous cloud cover without relying on diesel gensets.',
-    status: 'approved',
-    supporterCount: 0,
-    submittedBy: 'Agritech Working Group',
-    tags: ['Agriculture', 'Solar', 'Thermal', 'Frugal'],
-    createdAt: new Date(Date.now() - 4 * 86400000).toISOString(),
-  },
-  {
-    id: 'prob_assistive_screen_03',
-    title: 'Affordable Dynamic Refreshable Braille Display',
-    category: 'Accessibility',
-    affectedUsers: 'Over 10 million visually impaired students and professionals',
-    description: 'Commercial 40-cell refreshable Braille displays cost over $2,000 due to piezoelectric actuator patents. Can electromagnetic micro-solenoids, shape-memory alloys, or microfluidics drop the BOM cost under $50?',
-    status: 'approved',
-    supporterCount: 0,
-    submittedBy: 'Assistive Tech Lab',
-    tags: ['Accessibility', 'Micro-mechanics', 'Embedded'],
-    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-  },
-  {
-    id: 'prob_telecom_mesh_04',
-    title: 'Disaster-Resilient Mesh Network for Mountain Flood Valleys',
-    category: 'Infrastructure',
-    affectedUsers: 'Himalayan and coastal communities cut off during cloudbursts',
-    description: 'When cellular towers drown, rescue teams operate blind. Build an autonomous solar LoRa/packet radio mesh repeater droppable by low-cost drones that routes emergency SMS and GPS coordinates without cellular infrastructure.',
-    status: 'approved',
-    supporterCount: 0,
-    submittedBy: 'Disaster Resilience Group',
-    tags: ['Networking', 'LoRa', 'Disaster Relief', 'Embedded'],
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-  },
-];
+// Apply token verification to all problem routes so req.user is always populated
+router.use(verifyToken);
 
-let problemsStore = [...initialCuratedProblems];
+// ============================================================================
+// PUBLIC / GENERAL DISCOVERY ENDPOINTS
+// ============================================================================
 
-// GET: List approved problems with category & search filter (unlimited scaling)
+/**
+ * GET /api/problems
+ * List approved problems with category & search filters.
+ * Returns real supporter counts, resolution status, and whether caller has supported.
+ */
 router.get('/', (req, res) => {
   const { category, search } = req.query;
+  const currentUid = req.user && !req.user.isAnonymous ? req.user.uid : null;
 
-  let results = problemsStore.filter((p) => p.status === 'approved');
-
-  if (category && category !== 'All') {
-    results = results.filter((p) => p.category.toLowerCase().includes(category.toLowerCase()));
-  }
-
-  if (search) {
-    const q = search.toLowerCase();
-    results = results.filter(
-      (p) =>
-        p.title.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q) ||
-        p.tags.some((t) => t.toLowerCase().includes(q))
-    );
-  }
+  const results = problemsStore.getAllApproved(currentUid, { category, search });
 
   res.json({
     success: true,
@@ -95,53 +46,224 @@ router.get('/', (req, res) => {
   });
 });
 
-// POST: Submit a new problem (enters moderation queue)
-router.post('/', submissionRateLimiter, (req, res) => {
-  const { title, category, description, affectedUsers, submittedBy, tags } = req.body;
+// ============================================================================
+// USER SPECIFIC ENDPOINTS (DASHBOARD) - Must be before /:id parameterized routes
+// ============================================================================
 
-  if (!title || !category || !description) {
+/**
+ * GET /api/problems/user/my-problems
+ * Returns all problems created by the logged-in user, along with solution proposals received.
+ */
+router.get('/user/my-problems', requireAuth, (req, res) => {
+  const myProblems = problemsStore.getByAuthor(req.user.uid);
+
+  res.json({
+    success: true,
+    problems: myProblems,
+    count: myProblems.length,
+  });
+});
+
+/**
+ * GET /api/problems/user/my-supported
+ * Returns all problems supported by the logged-in user.
+ */
+router.get('/user/my-supported', requireAuth, (req, res) => {
+  const supported = problemsStore.getSupportedByUser(req.user.uid);
+
+  res.json({
+    success: true,
+    problems: supported,
+    count: supported.length,
+  });
+});
+
+/**
+ * GET /api/problems/user/my-solutions
+ * Returns all solution proposals submitted by the logged-in user.
+ */
+router.get('/user/my-solutions', requireAuth, (req, res) => {
+  const mySolutions = problemsStore.getSolutionsProposedByUser(req.user.uid);
+
+  res.json({
+    success: true,
+    solutions: mySolutions,
+    count: mySolutions.length,
+  });
+});
+
+// ============================================================================
+// CREATION, MUTATION & INTERACTION ENDPOINTS
+// ============================================================================
+
+/**
+ * POST /api/problems
+ * Strictly authenticated problem submission.
+ * Zero fake numbers: starts with 0 supporters.
+ */
+router.post('/', requireAuth, submissionRateLimiter, (req, res) => {
+  const { title, category, description, affectedUsers, tags } = req.body;
+
+  if (!title || !title.trim() || !category || !category.trim() || !description || !description.trim()) {
     return res.status(400).json({
       success: false,
       error: 'Missing required fields: title, category, and description are mandatory.',
     });
   }
 
-  const newProblem = {
-    id: 'prob_' + Math.random().toString(36).substring(2, 10),
-    title: title.trim(),
-    category: category.trim(),
-    affectedUsers: affectedUsers?.trim() || 'General Public',
-    description: description.trim(),
-    status: 'approved', // Immediately visible with community attribution
-    supporterCount: 1,
-    submittedBy: submittedBy?.trim() || 'Community Engineer',
-    tags: Array.isArray(tags) && tags.length > 0 ? tags : [category.trim(), 'Community'],
-    createdAt: new Date().toISOString(),
-  };
+  try {
+    const created = problemsStore.createProblem({
+      title,
+      category,
+      description,
+      affectedUsers,
+      tags,
+      user: req.user,
+    });
 
-  problemsStore.unshift(newProblem);
-
-  res.status(201).json({
-    success: true,
-    message: 'Problem submitted successfully! It has been placed in the moderation queue for review.',
-    problem: newProblem,
-  });
+    res.status(201).json({
+      success: true,
+      message: 'Problem submitted successfully! It is now live on The Problem Wall and in your Dashboard.',
+      problem: created,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to submit problem.',
+    });
+  }
 });
 
-// POST: Support / Upvote a problem
-router.post('/:id/support', (req, res) => {
-  const problem = problemsStore.find((p) => p.id === req.params.id);
+/**
+ * GET /api/problems/:id
+ * Retrieve a single problem by ID.
+ */
+router.get('/:id', (req, res) => {
+  const currentUid = req.user && !req.user.isAnonymous ? req.user.uid : null;
+  const problem = problemsStore.getById(req.params.id, currentUid);
+
   if (!problem) {
     return res.status(404).json({ success: false, error: 'Problem not found.' });
   }
 
-  problem.supporterCount += 1;
+  res.json({ success: true, problem });
+});
 
-  res.json({
-    success: true,
-    problemId: problem.id,
-    supporterCount: problem.supporterCount,
-  });
+/**
+ * PUT /api/problems/:id
+ * Edit an existing problem. Author or Admin only.
+ */
+router.put('/:id', requireAuth, (req, res) => {
+  const { title, category, description, affectedUsers, tags } = req.body;
+
+  const result = problemsStore.updateProblem(
+    req.params.id,
+    { title, category, description, affectedUsers, tags },
+    req.user
+  );
+
+  if (!result.success) {
+    const status = result.error.includes('Unauthorized') ? 403 : 404;
+    return res.status(status).json(result);
+  }
+
+  res.json(result);
+});
+
+/**
+ * DELETE /api/problems/:id
+ * Delete a problem. Author or Admin only.
+ */
+router.delete('/:id', requireAuth, (req, res) => {
+  const result = problemsStore.deleteProblem(req.params.id, req.user);
+
+  if (!result.success) {
+    const status = result.error.includes('Unauthorized') ? 403 : 404;
+    return res.status(status).json(result);
+  }
+
+  res.json(result);
+});
+
+/**
+ * PATCH /api/problems/:id/resolve
+ * Mark a problem as Resolved or Active. Author or Admin only.
+ */
+router.patch('/:id/resolve', requireAuth, (req, res) => {
+  const { isResolved } = req.body;
+  const result = problemsStore.toggleResolveProblem(req.params.id, req.user, isResolved);
+
+  if (!result.success) {
+    const status = result.error.includes('Unauthorized') ? 403 : 404;
+    return res.status(status).json(result);
+  }
+
+  res.json(result);
+});
+
+/**
+ * POST /api/problems/:id/support
+ * Toggle support (upvote/remove upvote) by authenticated user.
+ * Prevents double-voting and eliminates fake metrics.
+ */
+router.post('/:id/support', requireAuth, (req, res) => {
+  const result = problemsStore.toggleSupport(req.params.id, req.user);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json(result);
+});
+
+/**
+ * POST /api/problems/:id/solutions
+ * Propose a solution to an existing problem and request to connect with author.
+ * Strictly requires authentication and deducts 1 connection credit.
+ */
+router.post('/:id/solutions', requireAuth, (req, res) => {
+  const { proposedSolution, contactPitch, estimatedTimeline, portfolioUrl } = req.body;
+
+  if (!proposedSolution || !proposedSolution.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please describe your proposed technical approach or solution.',
+    });
+  }
+
+  const result = problemsStore.proposeSolution(
+    req.params.id,
+    { proposedSolution, contactPitch, estimatedTimeline, portfolioUrl },
+    req.user
+  );
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.status(201).json(result);
+});
+
+/**
+ * PATCH /api/problems/:id/solutions/:solutionId/connect
+ * Author or Admin accepts/declines a solution connection request.
+ */
+router.patch('/:id/solutions/:solutionId/connect', requireAuth, (req, res) => {
+  const { action } = req.body; // 'connect' | 'decline'
+
+  const result = problemsStore.respondToSolution(
+    req.params.id,
+    req.params.solutionId,
+    action,
+    req.user
+  );
+
+  if (!result.success) {
+    const status = result.error.includes('Unauthorized') ? 403 : 404;
+    return res.status(status).json(result);
+  }
+
+  res.json(result);
 });
 
 export default router;

@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Menu, X, Sparkles, Compass, ShieldCheck, LogIn, LogOut, User } from 'lucide-react';
+import { Menu, X, Sparkles, Compass, ShieldCheck, LogIn, LogOut, User, LayoutDashboard } from 'lucide-react';
 import { Badge } from './ui/Badge.jsx';
 import { authService, AUTHORIZED_ADMIN_EMAIL } from '../services/firebaseClient.js';
 import { AuthModal } from './auth/AuthModal.jsx';
@@ -115,6 +115,16 @@ export function Header({ activeSection, onNavigate, campaignState }) {
         <div className="flex items-center gap-2 sm:gap-3">
           {currentUser && !currentUser.isAnonymous ? (
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleNavClick('dashboard')}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full border border-purple-600/40 bg-purple-950/60 text-purple-200 hover:bg-purple-900/60 hover:text-white transition cursor-pointer"
+                title="My Engineer Dashboard"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5 text-purple-300" />
+                <span>Dashboard</span>
+              </button>
+
               {isAdmin && (
                 <button
                   type="button"
@@ -220,6 +230,16 @@ export function Header({ activeSection, onNavigate, campaignState }) {
                       ADMIN
                     </span>
                   )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('dashboard')}
+                  className="w-full text-left px-3.5 py-2.5 text-sm font-medium rounded-xl transition-all flex items-center justify-between border border-purple-800/40 bg-purple-950/40 text-purple-200 hover:text-white cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <LayoutDashboard className="w-4 h-4 text-purple-300" />
+                    <span>My Engineer Dashboard</span>
+                  </div>
                 </button>
                 {isAdmin && (
                   <button

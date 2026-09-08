@@ -23,6 +23,7 @@ import Footer from './components/Footer.jsx';
 // Public Experience Views (Experience Pillars)
 import DnaSimulator from './components/DnaSimulator.jsx';
 import ProblemsWallPreview from './components/ProblemsWallPreview.jsx';
+import UserDashboard from './components/dashboard/UserDashboard.jsx';
 import PriteeMentorPreview from './components/PriteeMentorPreview.jsx';
 import FutureMissionsView from './components/FutureMissionsView.jsx';
 import StoriesVoicesView from './components/StoriesVoicesView.jsx';
@@ -93,7 +94,7 @@ export function App() {
 
               {/* The Problem Wall Spotlight */}
               <section id="problems-spotlight">
-                <ProblemsWallPreview />
+                <ProblemsWallPreview onOpenAdmin={() => handleNavigate('admin')} />
               </section>
 
               {/* Mentor Spotlight */}
@@ -107,7 +108,19 @@ export function App() {
         {/* Dedicated Experience Views */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
           {activeSection === 'dna' && <DnaSimulator />}
-          {activeSection === 'problems' && <ProblemsWallPreview />}
+          {activeSection === 'problems' && (
+            <ProblemsWallPreview onOpenAdmin={() => handleNavigate('admin')} />
+          )}
+          {activeSection === 'dashboard' && (
+            <>
+              <ProblemsWallPreview onOpenAdmin={() => handleNavigate('admin')} />
+              <UserDashboard
+                isOpen={true}
+                onClose={() => handleNavigate('problems')}
+                onOpenAdmin={() => handleNavigate('admin')}
+              />
+            </>
+          )}
           {activeSection === 'missions' && <FutureMissionsView onSelectMission={handleNavigate} />}
           {activeSection === 'stories' && <StoriesVoicesView />}
           {activeSection === 'legacy' && <LegacyView />}

@@ -27,7 +27,25 @@ export function getApiUrl(endpoint) {
 
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
-  return fetch(url, options);
+  const headers = { ...(options.headers || {}) };
+
+  // If authorization is not already set, check for active auth token
+  if (!headers.Authorization && !headers.authorization && typeof window !== 'undefined') {
+    try {
+      const { authService } = await import('../services/firebaseClient.js');
+      const token = await authService.getIdToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+  }
+
+  return fetch(url, {
+    ...options,
+    headers,
+  });
 }
 
 export default apiFetch;
