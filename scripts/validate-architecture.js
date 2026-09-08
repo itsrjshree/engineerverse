@@ -92,20 +92,21 @@ async function runValidation() {
       'Detected fixed `year === 2026` logic in src/config/campaign.js'
     );
 
-    const { getCampaignState, CAMPAIGN_STATES } = await import(campaignEnginePath);
+    const { getCampaignState, PRESENTATION_STATES, CAMPAIGN_STATES } = await import(campaignEnginePath);
     const testYears = [2026, 2027, 2028, 2035];
     let allYearsPass = true;
     for (const y of testYears) {
-      const pre = getCampaignState(`${y}-09-10T12:00:00Z`);
-      const day = getCampaignState(`${y}-09-15T12:00:00Z`);
-      const post = getCampaignState(`${y}-09-16T12:00:00Z`);
+      const otherDayPre = getCampaignState(`${y}-09-10T12:00:00Z`);
+      const sept15Day = getCampaignState(`${y}-09-15T06:00:00Z`);
+      const otherDayPost = getCampaignState(`${y}-09-16T12:00:00Z`);
 
-      if (pre.state !== CAMPAIGN_STATES.PRE_LAUNCH || pre.edition !== String(y)) allYearsPass = false;
-      if (day.state !== CAMPAIGN_STATES.LAUNCH_DAY || day.edition !== String(y)) allYearsPass = false;
-      if (post.state !== CAMPAIGN_STATES.EVERGREEN || post.edition !== String(y)) allYearsPass = false;
+      // September 15 is ENGINEERS_DAY; all other days are EVERGREEN
+      if (otherDayPre.state !== 'evergreen' || otherDayPre.edition !== String(y)) allYearsPass = false;
+      if (sept15Day.state !== 'engineers_day' || sept15Day.edition !== String(y)) allYearsPass = false;
+      if (otherDayPost.state !== 'evergreen' || otherDayPost.edition !== String(y)) allYearsPass = false;
     }
     check(
-      'Rule 2.3: Year-independent annual cycle verified across 2026, 2027, 2028, 2035',
+      'Rule 2.3: Year-independent annual cycle verified across 2026, 2027, 2028, 2035 (Sept 15 = Engineers Day, all others = Evergreen)',
       allYearsPass,
       'Campaign state failed dynamic annual cycle resolution'
     );
@@ -239,7 +240,7 @@ async function runValidation() {
   if (fs.existsSync(audiencePath)) {
     const { AUDIENCE_PERSONAS, CORE_MINDSET_DIMENSIONS } = await import(audiencePath);
     const hasCuriousGeneralUser = AUDIENCE_PERSONAS.some((p) => p.id === 'curious_mind' && p.degreeRequired === false);
-    const hasDimensions = CORE_MINDSET_DIMENSIONS.length >= 11;
+    const hasDimensions = CORE_MINDSET_DIMENSIONS.length === 12;
 
     check(
       'Rule 6.2: General users without degrees are first-class users',
@@ -247,9 +248,9 @@ async function runValidation() {
       'General users without degrees must be supported as first-class citizens'
     );
     check(
-      'Rule 6.3: Core engineering mindset dimensions defined (11 dimensions)',
+      'Rule 6.3: Exactly 12 core engineering mindset dimensions defined',
       hasDimensions,
-      `Expected at least 11 mindset dimensions, found ${CORE_MINDSET_DIMENSIONS.length}`
+      `Expected exactly 12 mindset dimensions, found ${CORE_MINDSET_DIMENSIONS.length}`
     );
   }
 

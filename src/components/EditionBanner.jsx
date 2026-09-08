@@ -22,9 +22,9 @@ export function EditionBanner({ campaignState }) {
             {campaignState.badgeText}
           </span>
           <span className="text-slate-300 font-normal">
-            {campaignState.state === CAMPAIGN_STATES.EVERGREEN ? (
+            {campaignState.isEngineersDay ? (
               <strong className="text-white font-semibold">
-                {campaignState.evergreenNotice?.lead || `Engineers' Day ${campaignState.edition} is over. The problems aren't.`}
+                National Engineers' Day Celebration • September 15
               </strong>
             ) : (
               <span>
@@ -37,9 +37,11 @@ export function EditionBanner({ campaignState }) {
           </span>
         </div>
 
-        {/* Campaign Edition Label */}
+        {/* Edition / Platform Identity Label */}
         <div className="flex items-center gap-2 text-[11px] text-purple-300/80">
-          <span className="hidden sm:inline">Engineers' Day National Initiative</span>
+          <span className="hidden sm:inline">
+            {campaignState.isEngineersDay ? "Engineers' Day Active Window (IST)" : "Shree Labs × Pritee AI"}
+          </span>
           <span className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/40 text-purple-300 font-mono font-bold">
             {campaignState.edition}
           </span>

@@ -63,7 +63,7 @@ export function HeroSection({ campaignState, onNavigate }) {
               <span>Shree Labs × Pritee AI</span>
             </Badge>
             <Badge variant="glow" size="sm">
-              <span>Phase 0: Foundation</span>
+              <span>Evergreen Platform</span>
             </Badge>
           </div>
 

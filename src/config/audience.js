@@ -64,20 +64,22 @@ export const AUDIENCE_PERSONAS = [
 ];
 
 /**
- * The 11 Core Mindset Dimensions (Zero Degree Gatekeeping)
+ * The 12 Locked Core Mindset Dimensions (Zero Degree Gatekeeping)
+ * Strictly matches Section 9 of the Constitution.
  */
 export const CORE_MINDSET_DIMENSIONS = [
-  { id: 'thinking', label: 'Thinking & Analysis', description: 'Deconstructing ambiguous situations into logical cause-and-effect.' },
-  { id: 'curiosity', label: 'Curiosity', description: 'An irresistible drive to know how things work beneath the surface.' },
-  { id: 'systems_thinking', label: 'Systems Thinking', description: 'Seeing loops, bottlenecks, and interconnected dependencies.' },
-  { id: 'problem_solving', label: 'Problem Solving', description: 'Tenaciously tackling what others accept as impossible or permanent.' },
-  { id: 'creativity', label: 'Creativity', description: 'Combining disparate concepts into novel, non-obvious solutions.' },
-  { id: 'resourcefulness', label: 'Resourcefulness', description: 'Achieving extraordinary results with limited budgets and existing materials.' },
-  { id: 'execution', label: 'Execution', description: 'Moving from theoretical whiteboard designs to tangible, functioning reality.' },
-  { id: 'resilience', label: 'Resilience', description: 'Treating bugs, failures, and structural fatigue as telemetry to learn from.' },
-  { id: 'empathy', label: 'Empathy', description: 'Designing for human dignity, safety, ergonomics, and real lived experience.' },
-  { id: 'innovation', label: 'Innovation', description: 'Questioning fundamental axioms to build superior paradigms.' },
-  { id: 'impact_orientation', label: 'Impact Orientation', description: 'Measuring engineering worth by human lives uplifted.' },
+  { id: 'logical_thinking', label: 'Logical Thinking', description: 'Deconstructing ambiguous situations into deterministic cause-and-effect components.' },
+  { id: 'creative_problem_solving', label: 'Creative Problem Solving', description: 'Inventing non-obvious combinations and lateral shortcuts when conventional methods fail.' },
+  { id: 'systems_thinking', label: 'Systems Thinking', description: 'Mapping feedback loops, hidden bottlenecks, dependencies, and second-order consequences.' },
+  { id: 'innovation', label: 'Innovation', description: 'Challenging fundamental axioms to introduce paradigm shifts rather than incremental tweaks.' },
+  { id: 'resourcefulness', label: 'Resourcefulness', description: 'Achieving 10x outcomes with 0.1x budget using scavenged parts, open tools, and grit.' },
+  { id: 'risk_analysis', label: 'Risk Analysis', description: 'Anticipating catastrophic edge cases, failover conditions, and safety margins before failure.' },
+  { id: 'empathy', label: 'Empathy', description: 'Designing for human dignity, safety, ergonomics, and real lived user friction.' },
+  { id: 'execution', label: 'Execution', description: 'Translating whiteboard theories into ship-ready, robust, physical or digital artifacts.' },
+  { id: 'curiosity', label: 'Curiosity', description: 'An obsessive urge to understand how things actually work beneath the surface.' },
+  { id: 'resilience', label: 'Resilience', description: 'Viewing failure as telemetry; tenaciously hunting obscure bugs across adversity.' },
+  { id: 'automation_mindset', label: 'Automation Mindset', description: 'Eliminating repetitive cognitive toil: "If it happens twice, automate it."' },
+  { id: 'impact_orientation', label: 'Impact Orientation', description: 'Measuring engineering worth by human lives uplifted and societal public good created.' },
 ];
 
 export function getAllAudiencePersonas() {

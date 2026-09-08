@@ -20,20 +20,21 @@ console.log('\n--- Running ENGINEERVERSE Automated Unit & Contract Suite ---\n')
 // 1. Campaign Engine Tests
 console.log('1. Testing Campaign Lifecycle State Engine...');
 const sim2026Pre = getCampaignState('2026-09-14T10:00:00Z');
-assert.strictEqual(sim2026Pre.state, CAMPAIGN_STATES.PRE_LAUNCH, 'Pre-launch state mismatch for Sept 14');
+assert.strictEqual(sim2026Pre.state, CAMPAIGN_STATES.EVERGREEN, 'Evergreen state mismatch for Sept 14');
 assert.strictEqual(sim2026Pre.edition, '2026');
+assert.strictEqual(sim2026Pre.isEngineersDay, false);
 
 const sim2026Launch = getCampaignState('2026-09-15T04:00:00Z');
-assert.strictEqual(sim2026Launch.state, CAMPAIGN_STATES.LAUNCH_DAY, 'Launch day state mismatch for Sept 15');
+assert.strictEqual(sim2026Launch.state, CAMPAIGN_STATES.ENGINEERS_DAY, 'Engineers Day state mismatch for Sept 15');
 assert.strictEqual(sim2026Launch.isEngineersDay, true);
 
 const sim2026Post = getCampaignState('2026-09-16T04:00:00Z');
 assert.strictEqual(sim2026Post.state, CAMPAIGN_STATES.EVERGREEN, 'Evergreen state mismatch for Sept 16');
-assert.ok(sim2026Post.badgeText.includes("Engineers' Day 2026 is over. The problems aren't."));
+assert.strictEqual(sim2026Post.isEngineersDay, false);
 
 // Test future year (2030)
 const sim2030Launch = getCampaignState('2030-09-15T12:00:00Z');
-assert.strictEqual(sim2030Launch.state, CAMPAIGN_STATES.LAUNCH_DAY);
+assert.strictEqual(sim2030Launch.state, CAMPAIGN_STATES.ENGINEERS_DAY);
 assert.strictEqual(sim2030Launch.edition, '2030');
 console.log('✓ Campaign Engine tests passed.');
 
@@ -77,7 +78,7 @@ console.log('4. Testing Audience & General User Inclusivity Model...');
 assert.ok(AUDIENCE_PERSONAS.length >= 7, 'Must have at least 7 audience personas');
 const curious = getPersonaById('curious_mind');
 assert.ok(curious && curious.degreeRequired === false, 'General user must not require a degree');
-assert.strictEqual(CORE_MINDSET_DIMENSIONS.length, 11, 'Must have exactly 11 core mindset dimensions');
+assert.strictEqual(CORE_MINDSET_DIMENSIONS.length, 12, 'Must have exactly 12 core mindset dimensions');
 console.log('✓ Audience model tests passed.');
 
 // 5. Backend Server API Integration Tests

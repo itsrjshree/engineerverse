@@ -1,19 +1,27 @@
 /**
- * ENGINEERVERSE — Year-Independent Campaign Lifecycle Engine
- * Section 3: Invariant architecture supporting unlimited future years.
- * September 15 is a recurring annual calendar rule.
- * ZERO fixed-year business logic. All states resolve dynamically.
+ * ENGINEERVERSE — Presentation State & Annual Activation Engine
+ * Section 2 & 3: Evergreen Product Boundary & Date Contract
  *
- * Temporal States:
- * - PRE_LAUNCH: Before Sept 15 of the target annual edition
- * - LAUNCH_DAY: September 15 of the active annual edition (IST timezone)
- * - EVERGREEN: September 16 onwards — Perpetual engineering movement:
- *   "Engineers' Day {YEAR} is over. The problems aren't. ENGINEERVERSE — KEEP BUILDING."
+ * Locked Constitution:
+ * 1. ENGINEERVERSE is an evergreen platform permanently available at /engineerverse.
+ * 2. There is NO shutdown after Engineers' Day.
+ * 3. There is NO "campaign ended", "expired", "September 16 mode", or "post-campaign" dead state.
+ * 4. Exactly TWO date-driven presentation states exist:
+ *    A) ENGINEERS_DAY: September 15 00:00:00 IST through September 15 23:59:59 IST (Asia/Kolkata).
+ *    B) EVERGREEN: Active on every other date of the year (364/365 days).
+ * 5. Dynamic year handling: zero hardcoded 2026 business logic. Valid for 2026, 2027, 2028, 2035+.
+ * 6. Extensible annual configuration capability without altering the canonical /engineerverse hub.
  */
 
+export const PRESENTATION_STATES = {
+  ENGINEERS_DAY: 'engineers_day',
+  EVERGREEN: 'evergreen',
+};
+
+// Aliased for backwards compatibility with existing references
 export const CAMPAIGN_STATES = {
-  PRE_LAUNCH: 'pre_launch',
-  LAUNCH_DAY: 'launch_day',
+  ENGINEERS_DAY: 'engineers_day',
+  LAUNCH_DAY: 'engineers_day',
   EVERGREEN: 'evergreen',
 };
 
@@ -21,7 +29,9 @@ export const CAMPAIGN_STATES = {
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 /**
- * Convert a Date or ISO string to an IST-normalized Date representation
+ * Normalizes any Date or timestamp to India Standard Time (IST / Asia/Kolkata)
+ * @param {string|number|Date|null} dateInput
+ * @returns {Date}
  */
 export function toISTDate(dateInput) {
   const d = dateInput instanceof Date ? dateInput : new Date(dateInput || Date.now());
@@ -30,104 +40,100 @@ export function toISTDate(dateInput) {
 }
 
 /**
- * Get the exact launch timestamp for September 15 of any given year (in IST)
+ * Returns exact start of Engineers' Day (Sept 15 00:00:00 IST) in UTC for any given year
+ * September is month index 8 (0-indexed). 00:00:00 IST is 18:30:00 UTC on September 14.
+ * @param {number|string} year
+ * @returns {Date}
  */
-export function getLaunchDateForYear(year) {
+export function getEngineersDayStart(year) {
   const y = parseInt(year, 10);
-  // September is month index 8 (0-indexed). 00:00:00 IST is 18:30:00 UTC previous day.
   return new Date(Date.UTC(y, 8, 14, 18, 30, 0, 0));
 }
 
 /**
- * Get the exact transition timestamp for September 16 of any given year (in IST)
+ * Returns exact end of Engineers' Day (Sept 15 23:59:59.999 IST) in UTC for any given year
+ * 23:59:59.999 IST is 18:29:59.999 UTC on September 15.
+ * @param {number|string} year
+ * @returns {Date}
  */
-export function getPostLaunchDateForYear(year) {
+export function getEngineersDayEnd(year) {
   const y = parseInt(year, 10);
-  return new Date(Date.UTC(y, 8, 15, 18, 30, 0, 0));
+  return new Date(Date.UTC(y, 8, 15, 18, 29, 59, 999));
 }
 
 /**
- * Calculate the campaign state for any given timestamp
- * @param {string|Date|null} simulatedDate Optional simulation date for testing
+ * Determines whether Engineers' Day (September 15 in IST) is currently active
+ * @param {string|number|Date|null} simulatedDate
+ * @returns {boolean}
+ */
+export function isEngineersDayActive(simulatedDate = null) {
+  const now = simulatedDate ? new Date(simulatedDate) : new Date();
+  const istDate = toISTDate(now);
+  return istDate.getMonth() === 8 && istDate.getDate() === 15;
+}
+
+/**
+ * Optional registry for future annual edition creative overrides.
+ * Default evergreen and recurring Sept 15 experiences run automatically if no override is registered.
+ */
+export const ANNUAL_EDITION_REGISTRY = {};
+
+/**
+ * Registers an optional annual edition creative override without altering the core architecture.
+ * @param {number|string} year
+ * @param {Object} overrideConfig
+ */
+export function registerAnnualEditionOverride(year, overrideConfig) {
+  ANNUAL_EDITION_REGISTRY[String(year)] = overrideConfig;
+}
+
+/**
+ * Resolves the active presentation state for ENGINEERVERSE
+ * @param {string|number|Date|null} simulatedDate
+ * @returns {Object} Canonical state payload
  */
 export function getCampaignState(simulatedDate = null) {
   const now = simulatedDate ? new Date(simulatedDate) : new Date();
-
-  // Extract current year, month, and day in IST
   const istDate = toISTDate(now);
   const currentYear = istDate.getFullYear();
-  const currentMonth = istDate.getMonth(); // 8 = September (0-indexed)
-  const currentDay = istDate.getDate();
+  const isEngineersDay = isEngineersDayActive(now);
 
-  const launchStart = getLaunchDateForYear(currentYear);
-  const postLaunchStart = getPostLaunchDateForYear(currentYear);
+  const annualOverride = ANNUAL_EDITION_REGISTRY[String(currentYear)] || {};
 
-  // Determine active edition and state purely based on date relative to Sept 15 of currentYear
-  if (currentMonth === 8 && currentDay === 15) {
-    // September 15 in IST: LIVE LAUNCH DAY
-    const edition = String(currentYear);
+  if (isEngineersDay) {
+    // STATE A: Engineers' Day Experience (September 15 IST)
     return {
-      state: CAMPAIGN_STATES.LAUNCH_DAY,
-      edition,
+      state: PRESENTATION_STATES.ENGINEERS_DAY,
+      presentationMode: PRESENTATION_STATES.ENGINEERS_DAY,
+      edition: String(currentYear),
       currentYear,
       isEngineersDay: true,
-      badgeText: `Happy Engineers' Day ${edition} • Live Celebration`,
-      headline: "Don't Just Celebrate Engineers' Day. Engineer Something.",
-      subheadline: 'Today we celebrate the instinct to build, fix, and elevate humanity.',
-      heroTagline: 'When engineering works perfectly, it becomes invisible. Today, let\'s make the invisible visible.',
+      badgeText: annualOverride.engineersDayBadge || `Happy Engineers' Day ${currentYear} • Annual Celebration`,
+      headline: annualOverride.engineersDayHeadline || "Don't Just Celebrate Engineers' Day. Engineer Something.",
+      subheadline: annualOverride.engineersDaySubheadline || 'Today we celebrate the instinct to build, solve, and elevate humanity.',
+      heroTagline: annualOverride.engineersDayTagline || 'When engineering works perfectly, it becomes invisible. Today, let us make the invisible visible.',
       ctaPrimary: 'Discover Your Engineering DNA',
-      ctaSecondary: `Sign the ${edition} Pledge`,
-      evergreenNotice: null,
-      isCountdownActive: false,
+      ctaSecondary: `Sign the ${currentYear} Pledge`,
       targetDate: null,
-      nextEngineersDay: getLaunchDateForYear(currentYear + 1),
+      isCountdownActive: false,
     };
   }
 
-  if (now >= postLaunchStart) {
-    // September 16 onwards (Post Engineers' Day -> EVERGREEN)
-    const edition = String(currentYear);
-    const nextLaunchDate = getLaunchDateForYear(currentYear + 1);
-
-    return {
-      state: CAMPAIGN_STATES.EVERGREEN,
-      edition,
-      currentYear,
-      isEngineersDay: false,
-      badgeText: `Engineers' Day ${edition} is over. The problems aren't.`,
-      headline: 'ENGINEERVERSE — KEEP BUILDING.',
-      subheadline: 'India still has problems. Engineers still have work.',
-      heroTagline: 'Engineering isn\'t a one-day celebration. It\'s a perpetual commitment to debug the world.',
-      ctaPrimary: 'Discover Your Engineering DNA',
-      ctaSecondary: 'Enter The Problem Wall',
-      evergreenNotice: {
-        lead: `Engineers' Day ${edition} is over. The problems aren't.`,
-        callout: 'ENGINEERVERSE — KEEP BUILDING.',
-        detail: 'The annual celebration has concluded, but the challenges remain. The Problem Wall is open, new missions are awaiting architects, and the community is actively building.',
-      },
-      isCountdownActive: false,
-      targetDate: null,
-      nextEngineersDay: nextLaunchDate,
-    };
-  }
-
-  // Prior to September 15: PRE_LAUNCH mode
-  const edition = String(currentYear);
+  // STATE B: Normal Evergreen ENGINEERVERSE Experience (All other 364/365 dates)
   return {
-    state: CAMPAIGN_STATES.PRE_LAUNCH,
-    edition,
+    state: PRESENTATION_STATES.EVERGREEN,
+    presentationMode: PRESENTATION_STATES.EVERGREEN,
+    edition: String(currentYear),
     currentYear,
     isEngineersDay: false,
-    badgeText: `Engineers' Day ${edition} • Countdown to Launch`,
-    headline: 'Discover the Engineer Within You.',
-    subheadline: "Engineer What's Next.",
-    heroTagline: "Engineering isn't a degree. It's the instinct to solve what others learn to live with.",
+    badgeText: annualOverride.evergreenBadge || 'ENGINEERVERSE • Evergreen Engineering Movement',
+    headline: annualOverride.evergreenHeadline || 'Discover the Engineer Within You.',
+    subheadline: annualOverride.evergreenSubheadline || "Engineer What's Next.",
+    heroTagline: annualOverride.evergreenTagline || "Engineering isn't a degree. It's the instinct to solve what others learn to live with.",
     ctaPrimary: 'Discover Your Engineering DNA',
-    ctaSecondary: 'Explore Unsolved Problems',
-    evergreenNotice: null,
-    isCountdownActive: true,
-    targetDate: launchStart,
-    nextEngineersDay: launchStart,
+    ctaSecondary: 'Explore The Problem Wall',
+    targetDate: null,
+    isCountdownActive: false,
   };
 }
 

@@ -114,7 +114,9 @@ function setupFirebaseInstance(configToUse) {
     }
 
     isFirebaseConfigured = true;
-    authService.isConfigured = true;
+    if (typeof authService !== 'undefined' && authService) {
+      authService.isConfigured = true;
+    }
     return true;
   } catch (err) {
     console.warn('[FirebaseClient] Error initializing Firebase app:', err.message);
