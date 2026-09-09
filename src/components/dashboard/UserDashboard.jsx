@@ -247,6 +247,7 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
   if (!isOpen) return null;
 
   const isAdmin = currentUser?.email && currentUser.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+  const userInitial = (currentUser?.displayName || currentUser?.email || 'U').charAt(0).toUpperCase();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
@@ -254,16 +255,19 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
         {/* Modal Header */}
         <div className="p-5 sm:p-6 border-b border-purple-950/60 bg-gradient-to-r from-purple-950/40 via-[#0a0a20] to-[#070718] flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 overflow-hidden">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 border border-purple-500/40 flex items-center justify-center text-white font-bold shrink-0 overflow-hidden shadow-sm">
               {resolveAvatarUrl(currentUser?.photoURL) ? (
                 <img
                   src={resolveAvatarUrl(currentUser?.photoURL)}
                   alt={currentUser.displayName || 'Profile'}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <User className="w-5 h-5" />
+                <span className="text-base font-bold uppercase">{userInitial}</span>
               )}
             </div>
             <div className="min-w-0">

@@ -83,6 +83,7 @@ console.log('✓ Audience model tests passed.');
 
 // 5. Backend Server API Integration Tests
 console.log('5. Testing Backend Server API Routes...');
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test_session_secret_deterministic_32_bytes_long_min';
 const { createServer } = await import('../server/index.js');
 const app = createServer();
 const server = app.listen(0);

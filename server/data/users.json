@@ -18,7 +18,7 @@
     "discipline": "Systems & Software Engineering",
     "portfolioUrl": "",
     "createdAt": "2026-01-01T00:00:00.000Z",
-    "lastActiveAt": "2026-09-08T12:43:03.114Z"
+    "lastActiveAt": "2026-01-01T00:00:00.000Z"
   },
   {
     "uid": "Y73aZAgX0LdVsD9bZuLSaf1u6ZX2",
@@ -34,11 +34,11 @@
     "solutionsCount": 0,
     "supportsCount": 0,
     "connectionCredits": 5,
-    "photoURL": "/api/media/avatar/Y73aZAgX0LdVsD9bZuLSaf1u6ZX2?t=1788871618875",
+    "photoURL": null,
     "bio": "",
     "discipline": "Full Stack Systems",
     "portfolioUrl": "",
-    "createdAt": "2026-09-08T12:45:20.716Z",
-    "lastActiveAt": "2026-09-08T13:07:33.786Z"
+    "createdAt": "2026-09-09T11:26:09.907Z",
+    "lastActiveAt": "2026-09-09T11:35:59.857Z"
   }
 ]

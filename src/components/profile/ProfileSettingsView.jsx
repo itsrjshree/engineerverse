@@ -73,6 +73,7 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
   const [discipline, setDiscipline] = useState('Full Stack Systems');
   const [portfolioUrl, setPortfolioUrl] = useState('');
   const [photoURL, setPhotoURL] = useState('');
+  const [photoError, setPhotoError] = useState(false);
   const [avatarTheme, setAvatarTheme] = useState('purple');
   const [activeSubTab, setActiveSubTab] = useState('identity');
   const [isSaving, setIsSaving] = useState(false);
@@ -192,6 +193,11 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
     setSuccessToast('Profile photo removed. Initial letter avatar will be displayed.');
     setTimeout(() => setSuccessToast(''), 3500);
   };
+
+  // Reset photo error when photo changes
+  useEffect(() => {
+    setPhotoError(false);
+  }, [photoURL]);
 
   // Sync state from active user
   useEffect(() => {
@@ -366,11 +372,12 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
           <div className="flex items-center gap-5">
             {/* Avatar Showcase */}
             <div className="relative shrink-0">
-              {photoURL ? (
+              {photoURL && !photoError ? (
                 <img
                   src={resolvedPhotoSrc}
                   alt={displayName}
                   referrerPolicy="no-referrer"
+                  onError={() => setPhotoError(true)}
                   className={`w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 ${selectedGradient.border} shadow-[0_0_20px_rgba(168,85,247,0.3)]`}
                 />
               ) : (

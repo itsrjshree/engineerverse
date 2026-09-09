@@ -13,6 +13,7 @@ import http from 'node:http';
 // Ensure test runner mode is strictly asserted for automated tests
 process.env.NODE_ENV = 'test';
 process.env.ENGINEERVERSE_TEST_RUNNER = 'true';
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test_session_secret_deterministic_32_bytes_long_min';
 
 import { createServer } from '../server/index.js';
 import {

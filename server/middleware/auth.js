@@ -34,7 +34,7 @@ export async function verifyToken(req, res, next) {
 
   // If completely unauthenticated (no header/token provided)
   if (!token) {
-    req.user = { isAnonymous: true, uid: 'guest_' + req.ip };
+    req.user = { isAnonymous: true, uid: 'guest_' + req.ip, emailVerified: false };
     return next();
   }
 
@@ -57,6 +57,7 @@ export async function verifyToken(req, res, next) {
         email: AUTHORIZED_ADMIN_EMAIL,
         isAdmin: true,
         isAnonymous: false,
+        emailVerified: true,
       };
       return next();
     }
@@ -72,6 +73,7 @@ export async function verifyToken(req, res, next) {
         email: 'engineer.other@example.com',
         isAdmin: false,
         isAnonymous: false,
+        emailVerified: true,
       };
       return next();
     }
@@ -97,6 +99,7 @@ export async function verifyToken(req, res, next) {
       if (sessionUser) {
         const email = (sessionUser.email || '').toLowerCase();
         const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+        const emailVerified = Boolean(sessionUser.emailVerified);
         const userObj = {
           uid: sessionUser.uid,
           email,
@@ -104,6 +107,7 @@ export async function verifyToken(req, res, next) {
           role: isAdmin ? 'admin' : 'member',
           isAdmin,
           isAnonymous: false,
+          emailVerified,
         };
         const { usersStore } = await import('../services/usersStore.js');
         const storeUser = usersStore.getOrCreateUser(userObj);
@@ -117,6 +121,7 @@ export async function verifyToken(req, res, next) {
         req.user = {
           ...userObj,
           ...(storeUser || {}),
+          emailVerified,
           status: storeUser?.status || 'active',
           warningReason: storeUser?.warningReason || null,
           connectionCredits: storeUser?.connectionCredits ?? 5,
@@ -141,6 +146,7 @@ export async function verifyToken(req, res, next) {
       if (verifiedUser) {
         const email = (verifiedUser.email || '').toLowerCase();
         const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+        const emailVerified = verifiedUser.emailVerified === true;
 
         const userObj = {
           uid: verifiedUser.uid,
@@ -149,6 +155,7 @@ export async function verifyToken(req, res, next) {
           role: isAdmin ? 'admin' : 'member',
           isAdmin,
           isAnonymous: false,
+          emailVerified,
         };
 
         const { usersStore } = await import('../services/usersStore.js');
@@ -164,6 +171,7 @@ export async function verifyToken(req, res, next) {
         req.user = {
           ...userObj,
           ...(storeUser || {}),
+          emailVerified,
           status: storeUser?.status || 'active',
           warningReason: storeUser?.warningReason || null,
           connectionCredits: storeUser?.connectionCredits ?? 5,
@@ -194,6 +202,35 @@ export function requireAuth(req, res, next) {
       success: false,
       error: 'Account suspended by administration for guideline violations.',
       status: 'suspended',
+    });
+  }
+  next();
+}
+
+/**
+ * Requires an authenticated user with a verified identity (emailVerified: true).
+ * Rejects unauthenticated callers with 401.
+ * Rejects unverified callers with 403.
+ */
+export function requireVerifiedIdentity(req, res, next) {
+  if (!req.user || req.user.isAnonymous) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in with an authorized account.',
+    });
+  }
+  if (req.user.status === 'suspended') {
+    return res.status(403).json({
+      success: false,
+      error: 'Account suspended by administration for guideline violations.',
+      status: 'suspended',
+    });
+  }
+  if (req.user.emailVerified !== true) {
+    return res.status(403).json({
+      success: false,
+      error: 'Email verification required. Please verify your email address to perform this action.',
+      emailVerified: false,
     });
   }
   next();
@@ -231,5 +268,6 @@ export default {
   AUTHORIZED_ADMIN_EMAIL,
   verifyToken,
   requireAuth,
+  requireVerifiedIdentity,
   requireAdmin,
 };

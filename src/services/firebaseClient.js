@@ -254,16 +254,18 @@ export const authService = {
   },
 
   /**
-   * Sets and persists authenticated local session token & user profile
+   * Sets and persists authenticated local session token & user profile from verified Firebase ID token
    */
-  async _setLocalAuthenticatedSession(user) {
-    if (!user) return null;
-    let finalUser = { ...user };
+  async _setLocalAuthenticatedSession(idToken) {
+    if (!idToken || typeof idToken !== 'string') return null;
+    let finalUser = null;
     try {
       const res = await fetch(getApiUrl('/api/auth/session'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
       });
       if (res.ok) {
         const data = await res.json();
@@ -271,17 +273,17 @@ export const authService = {
           localStorage.setItem('engineerverse_session_token_v1', data.token);
         }
         if (data.user) {
-          finalUser = { ...finalUser, ...data.user };
+          finalUser = data.user;
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(finalUser));
+          }
+          dispatchAuthState(finalUser);
         }
       }
     } catch (err) {
       console.warn('[AuthService] Could not mint backend session token:', err);
     }
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(finalUser));
-    }
-    dispatchAuthState(finalUser);
     return finalUser;
   },
 
@@ -573,6 +575,9 @@ export const authService = {
         const user = result.user;
         const idToken = await user.getIdToken().catch(() => null);
         const userProfile = this._formatUserProfile(user);
+        if (idToken) {
+          await this._setLocalAuthenticatedSession(idToken).catch(() => {});
+        }
 
         return {
           success: true,
@@ -608,6 +613,9 @@ export const authService = {
         const user = result.user;
         const idToken = await user.getIdToken().catch(() => null);
         const userProfile = this._formatUserProfile(user);
+        if (idToken) {
+          await this._setLocalAuthenticatedSession(idToken).catch(() => {});
+        }
 
         return {
           success: true,
@@ -713,6 +721,9 @@ export const authService = {
         const user = result.user;
         const idToken = await user.getIdToken().catch(() => null);
         const userProfile = this._formatUserProfile(user);
+        if (idToken) {
+          await this._setLocalAuthenticatedSession(idToken).catch(() => {});
+        }
 
         return {
           success: true,
@@ -728,21 +739,10 @@ export const authService = {
       }
     }
 
-    // Local member fallback if Firebase is not yet provisioned
-    const localMember = {
-      uid: 'member_' + Math.random().toString(36).substring(2, 9),
-      email: email.trim().toLowerCase(),
-      displayName: email.trim().split('@')[0],
-      isAnonymous: false,
-      isAdmin: email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase(),
-    };
-    guestStorage.saveJourney({ name: localMember.displayName, email: localMember.email });
-    const sessionUser = await this._setLocalAuthenticatedSession(localMember);
-    const sessionToken = await this.getIdToken();
     return {
-      success: true,
-      user: sessionUser || localMember,
-      idToken: sessionToken,
+      success: false,
+      error: 'Firebase Authentication is not configured on this deployment. Real authentication requires Firebase client configuration.',
+      code: 'auth/not-configured',
     };
   },
 
@@ -764,6 +764,9 @@ export const authService = {
         if (displayName && displayName.trim()) {
           userProfile.displayName = displayName.trim();
         }
+        if (idToken) {
+          await this._setLocalAuthenticatedSession(idToken).catch(() => {});
+        }
 
         dispatchAuthState(userProfile);
         return {
@@ -780,45 +783,25 @@ export const authService = {
       }
     }
 
-    // Local member fallback if Firebase is not yet provisioned
-    const localMember = {
-      uid: 'member_' + Math.random().toString(36).substring(2, 9),
-      email: email.trim().toLowerCase(),
-      displayName: displayName.trim() || email.trim().split('@')[0],
-      isAnonymous: false,
-      isAdmin: email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase(),
-    };
-    guestStorage.saveJourney({ name: localMember.displayName, email: localMember.email });
-    const sessionUser = await this._setLocalAuthenticatedSession(localMember);
-    const sessionToken = await this.getIdToken();
     return {
-      success: true,
-      user: sessionUser || localMember,
-      idToken: sessionToken,
+      success: false,
+      error: 'Firebase Authentication is not configured on this deployment. Account registration requires Firebase client configuration.',
+      code: 'auth/not-configured',
     };
   },
 
   /**
-   * Continue as Named Community Member (Instant join without OAuth password friction)
+   * Continue as Named Community Member
+   * Saves guest preference locally. Requires verified identity for platform session creation.
    */
   async continueAsCommunityMember(name, roleOrInterest = 'Builder') {
     const trimmed = (name || '').trim() || 'Community Engineer';
-    const member = {
-      uid: 'comm_' + Math.random().toString(36).substring(2, 9),
-      displayName: trimmed,
-      email: `${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}@community.engineerverse`,
-      role: roleOrInterest,
-      isAnonymous: false,
-      isAdmin: false,
-    };
+    guestStorage.saveJourney({ name: trimmed, role: roleOrInterest });
 
-    guestStorage.saveJourney({ name: member.displayName, role: member.role });
-    const sessionUser = await this._setLocalAuthenticatedSession(member);
-    const sessionToken = await this.getIdToken();
     return {
-      success: true,
-      user: sessionUser || member,
-      idToken: sessionToken,
+      success: false,
+      error: 'Community membership requires authenticated sign-in with a verified account (Google, GitHub, or Email). Guest preferences have been saved locally.',
+      code: 'auth/verification-required',
     };
   },
 

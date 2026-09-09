@@ -25,6 +25,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export function createServer() {
+  if (!process.env.SESSION_SECRET || !process.env.SESSION_SECRET.trim()) {
+    throw new Error(
+      '[FATAL SECURITY ERROR] SESSION_SECRET environment variable is missing or empty. The server refuses to start without a cryptographically secure session secret.'
+    );
+  }
+
   const app = express();
 
   // Basic Middlewares

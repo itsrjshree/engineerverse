@@ -159,6 +159,10 @@ export function AuthModal({
       setAuthError(null);
 
       const res = await authService.continueAsCommunityMember(guestNameInput, guestRoleInput);
+      if (!res || !res.success) {
+        setAuthError(res?.error || 'Quick join failed.');
+        return;
+      }
       notifySuccess(res.user);
       onClose();
     } catch (err) {

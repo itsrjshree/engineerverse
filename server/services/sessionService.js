@@ -7,21 +7,32 @@
 
 import crypto from 'crypto';
 
-const SESSION_SECRET = process.env.SESSION_SECRET || 'engineerverse_auth_secret_session_2026';
+export function getSessionSecret() {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret || typeof secret !== 'string' || !secret.trim()) {
+    throw new Error(
+      '[FATAL SECURITY ERROR] SESSION_SECRET environment variable is missing or empty. The server refuses to operate without a cryptographically secure session secret.'
+    );
+  }
+  return secret.trim();
+}
 
 export function createSessionToken(user) {
   if (!user || !user.uid) return null;
+
+  const secret = getSessionSecret();
 
   const payload = {
     uid: user.uid,
     email: (user.email || '').toLowerCase(),
     name: user.displayName || user.name || (user.email ? user.email.split('@')[0] : 'Engineer'),
+    emailVerified: Boolean(user.emailVerified),
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 14 * 86400, // 14 days expiration
   };
 
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
 
   return `ev_session.${payloadB64}.${signature}`;
 }
@@ -37,7 +48,8 @@ export function verifySessionToken(token) {
   const [, payloadB64, signature] = parts;
 
   try {
-    const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
+    const secret = getSessionSecret();
+    const expectedSig = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
     // Constant time comparison to prevent timing attacks
     const sigBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expectedSig);
@@ -60,6 +72,7 @@ export function verifySessionToken(token) {
 }
 
 export default {
+  getSessionSecret,
   createSessionToken,
   verifySessionToken,
 };

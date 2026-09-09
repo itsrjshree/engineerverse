@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local databases and uploaded media storage
+server/data/
+server/storage/
+

@@ -130,6 +130,7 @@ export async function verifyFirebaseIdToken(token) {
       email: payload.email || '',
       name: payload.name || '',
       picture: payload.picture || '',
+      emailVerified: payload.email_verified === true,
     };
   } catch (err) {
     console.warn('[Token Verifier] Native crypto verification error:', err.message);
@@ -163,6 +164,7 @@ async function verifyWithGoogleTokenInfo(token, expectedSub) {
       email: info.email || '',
       name: info.name || '',
       picture: info.picture || '',
+      emailVerified: info.email_verified === true || info.email_verified === 'true',
     };
   } catch {
     return null;

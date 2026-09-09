@@ -60,23 +60,61 @@ router.get('/auth/client-config', (req, res) => {
   });
 });
 
-// Issues a cryptographic session token for authenticated email/community members
+// Issues a cryptographic session token for authenticated Firebase members
 router.post('/auth/session', async (req, res) => {
-  const { user } = req.body;
-  if (!user || !user.uid) {
-    return res.status(400).json({ success: false, error: 'User object with uid is required.' });
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (!authHeader || typeof authHeader !== 'string') {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Missing Authorization header.',
+    });
   }
+
+  const idToken = authHeader.replace(/^bearer\s+/i, '').replace(/^["']|["']$/g, '').trim();
+  if (!idToken) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Missing Firebase ID token.',
+    });
+  }
+
+  const { verifyFirebaseIdToken } = await import('../services/firebaseAdminService.js');
+  const verifiedUser = await verifyFirebaseIdToken(idToken);
+
+  if (!verifiedUser || !verifiedUser.uid) {
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid, malformed, or unverified Firebase authentication token.',
+    });
+  }
+
+  const email = (verifiedUser.email || '').toLowerCase();
+  const { AUTHORIZED_ADMIN_EMAIL } = await import('../middleware/auth.js');
+  const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+
+  const userPayload = {
+    uid: verifiedUser.uid,
+    email,
+    name: verifiedUser.name || (email ? email.split('@')[0] : 'Engineer'),
+    role: isAdmin ? 'admin' : 'member',
+    isAdmin,
+    isAnonymous: false,
+    emailVerified: verifiedUser.emailVerified === true,
+  };
 
   const { createSessionToken } = await import('../services/sessionService.js');
   const { usersStore } = await import('../services/usersStore.js');
 
-  const token = createSessionToken(user);
-  const storeUser = usersStore.getOrCreateUser(user);
+  const token = createSessionToken(userPayload);
+  const storeUser = usersStore.getOrCreateUser(userPayload);
 
   res.json({
     success: true,
     token,
-    user: storeUser,
+    user: {
+      ...userPayload,
+      ...(storeUser || {}),
+    },
   });
 });
 
