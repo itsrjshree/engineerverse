@@ -346,26 +346,9 @@ export function AuthModal({
 
             {/* Error Display */}
             {authError && (
-              <div className="p-3 bg-red-950/50 rounded-xl border border-red-500/40 space-y-2 text-xs text-red-200">
-                <div className="flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span className="leading-snug flex-1">{authError}</span>
-                </div>
-                {activeTab === 'social' && (
-                  <div className="pt-1 border-t border-red-500/20 flex items-center justify-between">
-                    <span className="text-[11px] text-red-300/80">Want to sign in right now?</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('email');
-                        setAuthError(null);
-                      }}
-                      className="text-[11px] font-medium text-purple-300 hover:text-white underline underline-offset-2 cursor-pointer flex items-center gap-1"
-                    >
-                      Use Email & Password <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
+              <div className="p-2.5 bg-red-950/40 rounded-xl border border-red-500/30 flex items-center gap-2 text-xs text-red-200">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span className="leading-snug">{authError}</span>
               </div>
             )}
 

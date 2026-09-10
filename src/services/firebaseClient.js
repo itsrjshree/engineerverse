@@ -554,13 +554,7 @@ export const authService = {
     } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
       userMessage = 'Invalid email or password. Please check your credentials or create a new account.';
     } else if (err.code === 'auth/invalid-credential') {
-      if (providerName === 'Google') {
-        userMessage = 'Google Sign-In credential rejected (auth/invalid-credential). This usually indicates that the OAuth Web Client Secret in Firebase Console (Authentication > Sign-in method > Google > Web SDK config) does not match Google Cloud Console, or Authorized JavaScript origins are missing. You can also sign in or register immediately via the Email & Password tab.';
-      } else if (providerName === 'Email' || providerName === 'Password') {
-        userMessage = 'Invalid email or password. Please check your credentials or create a new account.';
-      } else {
-        userMessage = `${providerName} sign-in rejected credentials. You can also use Email & Password.`;
-      }
+      userMessage = 'Unable to complete sign-in. Please try again.';
     } else if (err.code === 'auth/email-already-in-use') {
       userMessage = 'An account with this email already exists. Please sign in instead.';
     } else if (err.code === 'auth/weak-password') {

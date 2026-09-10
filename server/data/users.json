@@ -43,5 +43,29 @@
     "portfolioUrl": "",
     "createdAt": "2026-09-10T19:11:23.793Z",
     "lastActiveAt": "2026-09-10T19:11:23.799Z"
+  },
+  {
+    "uid": "Fg9K5wzqg4WeWYB3d3vG3uOw1N43",
+    "email": "rajshreek511@gmail.com",
+    "displayName": "Rajshree",
+    "role": "member",
+    "isAdmin": false,
+    "status": "active",
+    "warningReason": null,
+    "warnedAt": null,
+    "suspendedAt": null,
+    "suspendedReason": null,
+    "blockedAt": null,
+    "blockedReason": null,
+    "problemsCount": 0,
+    "solutionsCount": 0,
+    "supportsCount": 0,
+    "connectionCredits": 5,
+    "photoURL": null,
+    "bio": "",
+    "discipline": "Full Stack Systems",
+    "portfolioUrl": "",
+    "createdAt": "2026-09-10T20:19:43.247Z",
+    "lastActiveAt": "2026-09-10T20:31:11.147Z"
   }
 ]
