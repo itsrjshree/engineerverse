@@ -542,29 +542,31 @@ export const authService = {
   _mapAuthError(err, providerName = 'Identity') {
     let userMessage = err.message || `${providerName} authentication failed.`;
     if (err.code === 'auth/popup-blocked') {
-      userMessage = 'The sign-in popup was blocked by your browser. Please allow popups or open the app in a new tab.';
+      userMessage = 'The sign-in popup was blocked by your browser. Please allow popups or open in a new tab.';
     } else if (err.code === 'auth/popup-closed-by-user') {
-      userMessage = 'Sign-in popup was closed before completing. Please try again.';
+      userMessage = 'Sign-in window was closed before completing. Please try again.';
     } else if (err.code === 'auth/unauthorized-domain') {
-      userMessage = 'Domain not yet registered in Firebase Console > Authentication > Settings > Authorized domains.';
+      userMessage = 'This domain is not in the authorized domains list for sign-in.';
     } else if (err.code === 'auth/configuration-not-found' || err.message?.includes('CONFIGURATION_NOT_FOUND')) {
-      userMessage = 'Firebase Authentication is not yet activated in your Firebase Console. Go to Build > Authentication > Click "Get started".';
+      userMessage = 'Authentication service is not ready. Please try again later.';
     } else if (err.code === 'auth/operation-not-allowed') {
-      userMessage = `${providerName} sign-in provider is not enabled in Firebase Console. Go to Build > Authentication > Sign-in method to enable it.`;
+      userMessage = `${providerName} sign-in is currently unavailable.`;
     } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
       userMessage = 'Invalid email or password. Please check your credentials or create a new account.';
     } else if (err.code === 'auth/invalid-credential') {
-      if (providerName === 'Email' || providerName === 'Password') {
+      if (providerName === 'Google') {
+        userMessage = 'Google Sign-In credential rejected (auth/invalid-credential). This usually indicates that the OAuth Web Client Secret in Firebase Console (Authentication > Sign-in method > Google > Web SDK config) does not match Google Cloud Console, or Authorized JavaScript origins are missing. You can also sign in or register immediately via the Email & Password tab.';
+      } else if (providerName === 'Email' || providerName === 'Password') {
         userMessage = 'Invalid email or password. Please check your credentials or create a new account.';
       } else {
-        userMessage = `${providerName} authentication credential was rejected by Firebase (auth/invalid-credential). Please verify in Firebase Console: 1) Authentication > Sign-in method > ${providerName} is Enabled with a project support email; 2) Authentication > Settings > Authorized domains includes your current domain.`;
+        userMessage = `${providerName} sign-in rejected credentials. You can also use Email & Password.`;
       }
     } else if (err.code === 'auth/email-already-in-use') {
       userMessage = 'An account with this email already exists. Please sign in instead.';
     } else if (err.code === 'auth/weak-password') {
       userMessage = 'Password should be at least 6 characters long.';
     } else if (err.code === 'auth/network-request-failed') {
-      userMessage = 'Network connection issue or Firebase Authentication is not yet started in Firebase Console.';
+      userMessage = 'Network connection issue. Please check your connection and try again.';
     }
     return userMessage;
   },
@@ -591,11 +593,16 @@ export const authService = {
           idToken,
         };
       } catch (err) {
-        console.warn('[AuthService] Google popup error:', err.code || err.message);
+        console.error('[AuthService] Google popup sign-in error:', {
+          code: err?.code,
+          message: err?.message,
+          customData: err?.customData,
+        });
         return {
           success: false,
           error: this._mapAuthError(err, 'Google'),
-          code: err.code,
+          code: err?.code,
+          detail: err?.message,
         };
       }
     }
