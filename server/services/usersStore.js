@@ -11,7 +11,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { AUTHORIZED_ADMIN_EMAIL } from '../middleware/auth.js';
+import { AUTHORIZED_ADMIN_EMAIL, getAuthorizedAdminUid } from '../middleware/auth.js';
 import { problemsStore } from './problemsStore.js';
 import { uploadImageToCloudinary, deleteImageFromCloudinary } from './cloudinaryService.js';
 
@@ -249,9 +249,9 @@ class UsersStore {
       const canonicalUid = this.emailToUid.get(email);
       existing = this.usersById.get(canonicalUid);
       if (existing && uid && existing.uid !== uid) {
-        const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
-        if (existing.isAdmin && configuredAdminUid && uid !== configuredAdminUid) {
-          // Do not link admin account if UID does not match configured admin UID
+        const authorizedUid = getAuthorizedAdminUid();
+        if (existing.isAdmin && (!authorizedUid || uid !== authorizedUid)) {
+          // Do not link admin account if UID does not match configured admin UID (fail closed)
           existing = null;
         } else {
           // Migrate / link UID to the new authenticated credential
@@ -268,15 +268,18 @@ class UsersStore {
       existing.lastActiveAt = new Date().toISOString();
       const isTargetAdminEmail = (existing.email || email) === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
       const isEmailVerified = userObj.emailVerified === true;
-      const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
-      const uidMatches = !configuredAdminUid || existing.uid === configuredAdminUid;
+      const authorizedUid = getAuthorizedAdminUid();
+      const uidMatches = Boolean(authorizedUid && existing.uid === authorizedUid);
 
-      // Only elevate or retain admin privileges if email is verified, UID matches, and status is active
+      // Only elevate or retain admin privileges if email is verified, UID matches configured admin UID, and status is active
       if (isTargetAdminEmail) {
         if (isEmailVerified && existing.status === 'active' && uidMatches) {
           existing.isAdmin = true;
           existing.role = 'admin';
           existing.connectionCredits = 9999;
+        } else {
+          existing.isAdmin = false;
+          existing.role = 'member';
         }
       }
       if (userObj.displayName && (!existing.displayName || existing.displayName === 'Community Member')) {
@@ -285,7 +288,7 @@ class UsersStore {
       this._scheduleSave();
 
       const result = { ...existing };
-      // Unverified caller can never receive active admin permissions in session
+      // Unverified caller or non-matching UID can never receive active admin permissions in session
       if (isTargetAdminEmail && (!isEmailVerified || !uidMatches)) {
         result.isAdmin = false;
         result.role = 'member';
@@ -296,8 +299,8 @@ class UsersStore {
     // 3. Create single unique record
     const finalUid = uid || 'user_' + Math.random().toString(36).substring(2, 10);
     const isTargetAdminEmail = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
-    const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
-    const uidMatches = !configuredAdminUid || finalUid === configuredAdminUid;
+    const authorizedUid = getAuthorizedAdminUid();
+    const uidMatches = Boolean(authorizedUid && finalUid === authorizedUid);
     const isNewUserAdmin = isTargetAdminEmail && userObj.emailVerified === true && uidMatches;
 
     const newUser = {

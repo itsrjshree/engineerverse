@@ -9,12 +9,47 @@ import { config } from '../config.js';
 export const AUTHORIZED_ADMIN_EMAIL = 'rajshreeakm@gmail.com';
 
 /**
+ * Resolves the configured Admin Firebase UID.
+ * 
+ * Strict Contract:
+ * - Production: ADMIN_FIREBASE_UID (or ADMIN_UID) is MANDATORY. If unset or empty,
+ *   returns null (FAIL CLOSED — administrative authorization is completely unavailable).
+ * - Standard Runtime / Dev: If unset, returns null (FAIL CLOSED — no admin privileges).
+ * - Isolated Test Mode ONLY (NODE_ENV === 'test' && ENGINEERVERSE_TEST_RUNNER === 'true'):
+ *   Returns process.env.ADMIN_FIREBASE_UID if configured, otherwise falls back to
+ *   the deterministic test fixture UID ('admin_sole_rajshree').
+ */
+export function getAuthorizedAdminUid() {
+  const envUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
+  if (envUid) {
+    return envUid;
+  }
+
+  // In production, FAIL CLOSED immediately: zero fallback, admin privileges impossible
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
+
+  // Strictly isolated automated test runner fallback
+  const isTestEnvironment =
+    process.env.NODE_ENV === 'test' &&
+    (process.env.ENGINEERVERSE_TEST_RUNNER === 'true' || process.env.VITEST === 'true');
+
+  if (isTestEnvironment) {
+    return 'admin_sole_rajshree';
+  }
+
+  // Standard runtime without configured admin UID: fail closed
+  return null;
+}
+
+/**
  * Server-side Admin Authorization Verification Helper
  * Verifies:
  * 1. Non-anonymous, non-empty UID
- * 2. Matches authorized admin email
+ * 2. Matches authorized admin email (rajshreeakm@gmail.com)
  * 3. Requires emailVerified === true
- * 4. Matches ADMIN_FIREBASE_UID if configured
+ * 4. Requires configured ADMIN_FIREBASE_UID matching user.uid (FAIL CLOSED)
  * 5. Requires active status in authoritative store (not suspended/blocked)
  * 6. Requires role === 'admin' and isAdmin === true in authoritative store
  */
@@ -27,9 +62,10 @@ export function isAuthorizedAdmin(user, storeUser) {
   // Strict email verification requirement for administrative actions
   if (user.emailVerified !== true) return false;
 
-  // If server-side ADMIN_FIREBASE_UID is configured, UID must match it
-  const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
-  if (configuredAdminUid && user.uid !== configuredAdminUid) {
+  // Administrative authorization MUST NOT rely on email alone.
+  // ADMIN_FIREBASE_UID must be configured and match user.uid (FAIL CLOSED).
+  const authorizedUid = getAuthorizedAdminUid();
+  if (!authorizedUid || user.uid !== authorizedUid) {
     return false;
   }
 
@@ -87,8 +123,9 @@ export async function verifyToken(req, res, next) {
       token === 'admin_token' ||
       token === 'test_admin_token'
     ) {
+      const adminUid = getAuthorizedAdminUid() || 'admin_sole_rajshree';
       req.user = {
-        uid: 'admin_rajshree_test',
+        uid: adminUid,
         role: 'admin',
         email: AUTHORIZED_ADMIN_EMAIL,
         isAdmin: true,
@@ -338,8 +375,15 @@ export function requireAdmin(req, res, next) {
   const userEmail = (req.user.email || '').toLowerCase();
   const authorizedEmail = AUTHORIZED_ADMIN_EMAIL.toLowerCase();
 
-  const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
-  if (configuredAdminUid && req.user.uid !== configuredAdminUid) {
+  const authorizedUid = getAuthorizedAdminUid();
+  if (!authorizedUid) {
+    return res.status(403).json({
+      success: false,
+      error: 'Unauthorized access. Administrative authorization is not configured.',
+    });
+  }
+
+  if (req.user.uid !== authorizedUid) {
     return res.status(403).json({
       success: false,
       error: 'Unauthorized access. You do not have permission to view this console.',
@@ -358,6 +402,7 @@ export function requireAdmin(req, res, next) {
 
 export default {
   AUTHORIZED_ADMIN_EMAIL,
+  getAuthorizedAdminUid,
   isAuthorizedAdmin,
   verifyToken,
   requireAuth,
