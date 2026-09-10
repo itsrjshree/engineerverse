@@ -30,6 +30,9 @@
     "warningReason": null,
     "warnedAt": null,
     "suspendedAt": null,
+    "suspendedReason": null,
+    "blockedAt": null,
+    "blockedReason": null,
     "problemsCount": 0,
     "solutionsCount": 0,
     "supportsCount": 0,
@@ -38,7 +41,7 @@
     "bio": "",
     "discipline": "Full Stack Systems",
     "portfolioUrl": "",
-    "createdAt": "2026-09-09T11:26:09.907Z",
-    "lastActiveAt": "2026-09-09T11:35:59.857Z"
+    "createdAt": "2026-09-10T13:46:44.106Z",
+    "lastActiveAt": "2026-09-10T13:46:44.113Z"
   }
 ]

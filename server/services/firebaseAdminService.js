@@ -81,41 +81,71 @@ export async function verifyFirebaseIdToken(token) {
   }
 
   // 1. Verify algorithm and key ID
-  if (header.alg !== 'RS256' || !header.kid) {
+  if (!header || header.alg !== 'RS256' || !header.kid || typeof header.kid !== 'string') {
     return null;
   }
 
   // 2. Verify temporal validity
   const now = Math.floor(Date.now() / 1000);
-  if (!payload.exp || now > payload.exp) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  if (!payload.exp || typeof payload.exp !== 'number' || now > payload.exp) {
     return null; // Expired
   }
-  if (payload.iat && now < payload.iat - 300) {
+  if (!payload.iat || typeof payload.iat !== 'number' || now < payload.iat - 300) {
     return null; // Issued in the future
   }
+  if (payload.auth_time && (typeof payload.auth_time !== 'number' || now < payload.auth_time - 300)) {
+    return null; // Invalid auth_time in future
+  }
 
-  // 3. Verify Project ID / Audience if configured
-  const configuredProjectId = config.firebaseAdmin?.projectId || process.env.VITE_FIREBASE_PROJECT_ID;
+  // 3. Verify Subject / UID (must be non-empty string, max 128 characters)
+  const uid = payload.sub || payload.user_id;
+  if (!uid || typeof uid !== 'string' || uid.trim().length === 0 || uid.length > 128) {
+    return null;
+  }
+  if (payload.sub && payload.user_id && payload.sub !== payload.user_id) {
+    return null; // Inconsistent subject / user_id
+  }
+
+  // 4. Verify Project ID / Audience and Issuer
+  const configuredProjectId = (
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    config.firebaseAdmin?.projectId ||
+    ''
+  ).trim();
+
   if (configuredProjectId) {
-    if (payload.aud && payload.aud !== configuredProjectId) {
-      return null; // Wrong audience
+    if (!payload.aud || payload.aud !== configuredProjectId) {
+      return null; // Wrong or missing audience
     }
     const expectedIss = `https://securetoken.google.com/${configuredProjectId}`;
-    if (payload.iss && payload.iss !== expectedIss) {
-      return null; // Wrong issuer
+    if (!payload.iss || payload.iss !== expectedIss) {
+      return null; // Wrong or missing issuer
+    }
+  } else {
+    // If not explicitly configured, enforce canonical Firebase securetoken issuer structure
+    if (!payload.iss || typeof payload.iss !== 'string' || !payload.iss.startsWith('https://securetoken.google.com/')) {
+      return null;
+    }
+    const derivedProject = payload.iss.replace('https://securetoken.google.com/', '').trim();
+    if (!derivedProject || payload.aud !== derivedProject) {
+      return null;
     }
   }
 
-  // 4. Retrieve Google public certs
+  // 5. Retrieve Google public certificates
   const certs = await getGooglePublicCertificates();
-  const cert = certs[header.kid];
+  const cert = certs && typeof certs === 'object' ? certs[header.kid] : null;
 
   if (!cert) {
-    // If cert for kid is not found directly, attempt Google tokeninfo fallback
-    return await verifyWithGoogleTokenInfo(token, payload.sub);
+    // If cert for kid is not found directly, attempt Google tokeninfo fallback with strict audience/sub checks
+    return await verifyWithGoogleTokenInfo(token, uid, configuredProjectId);
   }
 
-  // 5. Cryptographic signature check with Node's native crypto
+  // 6. Cryptographic signature check with Node's native crypto
   try {
     const verifier = crypto.createVerify('RSA-SHA256');
     verifier.update(`${parts[0]}.${parts[1]}`);
@@ -126,8 +156,8 @@ export async function verifyFirebaseIdToken(token) {
     }
 
     return {
-      uid: payload.user_id || payload.sub || payload.uid,
-      email: payload.email || '',
+      uid,
+      email: (payload.email || '').trim().toLowerCase(),
       name: payload.name || '',
       picture: payload.picture || '',
       emailVerified: payload.email_verified === true,
@@ -140,8 +170,9 @@ export async function verifyFirebaseIdToken(token) {
 
 /**
  * Fallback verification via Google's tokeninfo endpoint if public certs are unreachable
+ * Strictly validates audience, subject, expiration, and claims to prevent cross-client token reuse
  */
-async function verifyWithGoogleTokenInfo(token, expectedSub) {
+async function verifyWithGoogleTokenInfo(token, expectedSub, expectedAud) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -155,13 +186,29 @@ async function verifyWithGoogleTokenInfo(token, expectedSub) {
     if (!res.ok) return null;
 
     const info = await res.json();
-    if (!info || (expectedSub && info.sub !== expectedSub)) {
+    if (!info || typeof info !== 'object') {
+      return null;
+    }
+
+    // Verify subject
+    if (!info.sub || info.sub !== expectedSub) {
+      return null;
+    }
+
+    // Verify audience matches expected project to block arbitrary OAuth token reuse
+    if (expectedAud && info.aud !== expectedAud) {
+      return null;
+    }
+
+    // Verify expiration
+    const now = Math.floor(Date.now() / 1000);
+    if (info.exp && parseInt(info.exp, 10) < now) {
       return null;
     }
 
     return {
       uid: info.sub,
-      email: info.email || '',
+      email: (info.email || '').trim().toLowerCase(),
       name: info.name || '',
       picture: info.picture || '',
       emailVerified: info.email_verified === true || info.email_verified === 'true',

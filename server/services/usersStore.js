@@ -255,11 +255,20 @@ class UsersStore {
 
     if (existing) {
       existing.lastActiveAt = new Date().toISOString();
-      const isAdmin = (existing.email || email) === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
-      if (isAdmin) {
-        existing.isAdmin = true;
-        existing.role = 'admin';
-        existing.connectionCredits = 9999;
+      const isTargetAdminEmail = (existing.email || email) === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+      const isEmailVerified = userObj.emailVerified === true;
+
+      // Only elevate or retain admin privileges if email is verified and status is active
+      if (isTargetAdminEmail) {
+        if (isEmailVerified && existing.status === 'active') {
+          existing.isAdmin = true;
+          existing.role = 'admin';
+          existing.connectionCredits = 9999;
+        } else if (!isEmailVerified) {
+          // Unverified identities are never granted active admin privileges
+          existing.isAdmin = false;
+          existing.role = 'member';
+        }
       }
       if (userObj.displayName && (!existing.displayName || existing.displayName === 'Community Member')) {
         existing.displayName = userObj.displayName.trim();
@@ -270,22 +279,26 @@ class UsersStore {
 
     // 3. Create single unique record
     const finalUid = uid || 'user_' + Math.random().toString(36).substring(2, 10);
-    const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+    const isTargetAdminEmail = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+    const isNewUserAdmin = isTargetAdminEmail && userObj.emailVerified === true;
 
     const newUser = {
       uid: finalUid,
       email: email || `member_${finalUid}@engineerverse.local`,
       displayName: (userObj.displayName || userObj.name || (email ? email.split('@')[0] : 'Community Engineer')).trim(),
-      role: isAdmin ? 'admin' : 'member',
-      isAdmin,
+      role: isNewUserAdmin ? 'admin' : 'member',
+      isAdmin: isNewUserAdmin,
       status: 'active',
       warningReason: null,
       warnedAt: null,
       suspendedAt: null,
+      suspendedReason: null,
+      blockedAt: null,
+      blockedReason: null,
       problemsCount: 0,
       solutionsCount: 0,
       supportsCount: 0,
-      connectionCredits: isAdmin ? 9999 : 5,
+      connectionCredits: isNewUserAdmin ? 9999 : 5,
       photoURL: userObj.photoURL || null,
       bio: userObj.bio || '',
       discipline: userObj.discipline || 'Full Stack Systems',
@@ -511,7 +524,8 @@ class UsersStore {
     const user = this.usersById.get(uid);
     if (!user) return { success: false, error: 'User not found.' };
 
-    if (user.isAdmin) {
+    const email = (user.email || '').toLowerCase();
+    if (user.isAdmin || user.role === 'admin' || email === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
       return { success: false, error: 'Cannot suspend administrator account.' };
     }
 
@@ -532,6 +546,32 @@ class UsersStore {
     return { success: true, user: { ...user } };
   }
 
+  blockUser(uid, reason, moderatorId) {
+    const user = this.usersById.get(uid);
+    if (!user) return { success: false, error: 'User not found.' };
+
+    const email = (user.email || '').toLowerCase();
+    if (user.isAdmin || user.role === 'admin' || email === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+      return { success: false, error: 'Cannot block administrator account.' };
+    }
+
+    user.status = 'blocked';
+    user.blockedReason = reason || 'Account permanently blocked for severe policy violations.';
+    user.blockedAt = new Date().toISOString();
+
+    this.logAudit({
+      action: 'USER_BLOCKED',
+      targetUid: uid,
+      targetEmail: user.email,
+      reason: user.blockedReason,
+      moderatorId,
+      timestamp: new Date().toISOString(),
+    });
+
+    this._saveToDiskImmediate();
+    return { success: true, user: { ...user } };
+  }
+
   reactivateUser(uid, moderatorId) {
     const user = this.usersById.get(uid);
     if (!user) return { success: false, error: 'User not found.' };
@@ -541,6 +581,8 @@ class UsersStore {
     user.warnedAt = null;
     user.suspendedAt = null;
     user.suspendedReason = null;
+    user.blockedAt = null;
+    user.blockedReason = null;
 
     this.logAudit({
       action: 'USER_REACTIVATED',

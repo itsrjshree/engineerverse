@@ -184,6 +184,22 @@ router.post('/users/:uid/suspend', requireAdmin, (req, res) => {
   });
 });
 
+// Block a user permanently
+router.post('/users/:uid/block', requireAdmin, (req, res) => {
+  const { reason } = req.body;
+  const result = usersStore.blockUser(req.params.uid, reason, req.user.uid);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    message: `User account permanently blocked.`,
+    user: result.user,
+  });
+});
+
 // Reactivate a user
 router.post('/users/:uid/reactivate', requireAdmin, (req, res) => {
   const result = usersStore.reactivateUser(req.params.uid, req.user.uid);

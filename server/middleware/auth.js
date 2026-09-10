@@ -9,6 +9,41 @@ import { config } from '../config.js';
 export const AUTHORIZED_ADMIN_EMAIL = 'rajshreeakm@gmail.com';
 
 /**
+ * Server-side Admin Authorization Verification Helper
+ * Verifies:
+ * 1. Non-anonymous, non-empty UID
+ * 2. Matches authorized admin email
+ * 3. Requires emailVerified === true
+ * 4. Matches ADMIN_FIREBASE_UID if configured
+ * 5. Requires active status in authoritative store (not suspended/blocked)
+ * 6. Requires role === 'admin' and isAdmin === true in authoritative store
+ */
+export function isAuthorizedAdmin(user, storeUser) {
+  if (!user || user.isAnonymous || !user.uid) return false;
+
+  const email = (user.email || '').trim().toLowerCase();
+  if (email !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) return false;
+
+  // Strict email verification requirement for administrative actions
+  if (user.emailVerified !== true) return false;
+
+  // If server-side ADMIN_FIREBASE_UID is configured, UID must match it
+  const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
+  if (configuredAdminUid && user.uid !== configuredAdminUid) {
+    return false;
+  }
+
+  // Authoritative store status and role verification
+  if (storeUser) {
+    if (storeUser.status !== 'active') return false;
+    if (storeUser.role !== 'admin' || storeUser.isAdmin !== true) return false;
+    if ((storeUser.email || '').trim().toLowerCase() !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) return false;
+  }
+
+  return true;
+}
+
+/**
  * Verifies bearer tokens from Firebase Authentication.
  * Sets req.user if valid; returns 401 if token is present but invalid/expired/malformed.
  * If no token is provided, sets req.user to an anonymous representation.
@@ -39,11 +74,12 @@ export async function verifyToken(req, res, next) {
   }
 
   // Strictly isolate automated test tokens to test environments (npm test / scripts)
-  // These NEVER execute in normal browser development or production runtime.
+  // These NEVER execute in production (NODE_ENV === 'production')
   const isTestEnvironment =
-    process.env.NODE_ENV === 'test' ||
-    process.env.ENGINEERVERSE_TEST_RUNNER === 'true' ||
-    process.env.VITEST === 'true';
+    process.env.NODE_ENV !== 'production' &&
+    (process.env.NODE_ENV === 'test' ||
+      process.env.ENGINEERVERSE_TEST_RUNNER === 'true' ||
+      process.env.VITEST === 'true');
 
   if (isTestEnvironment) {
     if (
@@ -58,6 +94,8 @@ export async function verifyToken(req, res, next) {
         isAdmin: true,
         isAnonymous: false,
         emailVerified: true,
+        status: 'active',
+        connectionCredits: 9999,
       };
       return next();
     }
@@ -74,6 +112,8 @@ export async function verifyToken(req, res, next) {
         isAdmin: false,
         isAnonymous: false,
         emailVerified: true,
+        status: 'active',
+        connectionCredits: 5,
       };
       return next();
     }
@@ -92,93 +132,106 @@ export async function verifyToken(req, res, next) {
     }
   }
 
-    // Cryptographic verification for JWTs (Firebase ID tokens)
-    if (token.startsWith('ev_session.')) {
-      const { verifySessionToken } = await import('../services/sessionService.js');
-      const sessionUser = verifySessionToken(token);
-      if (sessionUser) {
-        const email = (sessionUser.email || '').toLowerCase();
-        const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
-        const emailVerified = Boolean(sessionUser.emailVerified);
-        const userObj = {
-          uid: sessionUser.uid,
-          email,
-          name: sessionUser.name || (email ? email.split('@')[0] : 'Engineer'),
-          role: isAdmin ? 'admin' : 'member',
-          isAdmin,
-          isAnonymous: false,
-          emailVerified,
-        };
-        const { usersStore } = await import('../services/usersStore.js');
-        const storeUser = usersStore.getOrCreateUser(userObj);
-        if (storeUser && storeUser.status === 'suspended') {
-          return res.status(403).json({
-            success: false,
-            error: 'Account suspended by administration for guideline violations.',
-            status: 'suspended',
-          });
-        }
-        req.user = {
-          ...userObj,
-          ...(storeUser || {}),
-          emailVerified,
-          status: storeUser?.status || 'active',
-          warningReason: storeUser?.warningReason || null,
-          connectionCredits: storeUser?.connectionCredits ?? 5,
-        };
-        return next();
-      }
-    }
+  // Cryptographic verification for native session tokens (ev_session)
+  if (token.startsWith('ev_session.')) {
+    const { verifySessionToken } = await import('../services/sessionService.js');
+    const sessionUser = verifySessionToken(token);
+    if (sessionUser && sessionUser.uid) {
+      const email = (sessionUser.email || '').toLowerCase();
+      const emailVerified = Boolean(sessionUser.emailVerified);
 
-    if (token.includes('.')) {
-      const parts = token.split('.');
-      if (parts.length !== 3) {
-        return res.status(401).json({
+      const userObj = {
+        uid: sessionUser.uid,
+        email,
+        name: sessionUser.name || (email ? email.split('@')[0] : 'Engineer'),
+        isAnonymous: false,
+        emailVerified,
+      };
+
+      const { usersStore } = await import('../services/usersStore.js');
+      const storeUser = usersStore.getOrCreateUser(userObj);
+
+      if (storeUser && (storeUser.status === 'suspended' || storeUser.status === 'blocked')) {
+        return res.status(403).json({
           success: false,
-          error: 'Malformed authentication token.',
+          error: `Account ${storeUser.status} by administration for guideline violations.`,
+          status: storeUser.status,
         });
       }
 
-      // Attempt cryptographic RS256 verification against Google's public certificates
-      const { verifyFirebaseIdToken } = await import('../services/firebaseAdminService.js');
-      const verifiedUser = await verifyFirebaseIdToken(token);
+      const isAdmin = isAuthorizedAdmin(userObj, storeUser);
+      const effectiveRole = isAdmin ? 'admin' : (storeUser?.role || 'member');
 
-      if (verifiedUser) {
-        const email = (verifiedUser.email || '').toLowerCase();
-        const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
-        const emailVerified = verifiedUser.emailVerified === true;
-
-        const userObj = {
-          uid: verifiedUser.uid,
-          email,
-          name: verifiedUser.name || email.split('@')[0],
-          role: isAdmin ? 'admin' : 'member',
-          isAdmin,
-          isAnonymous: false,
-          emailVerified,
-        };
-
-        const { usersStore } = await import('../services/usersStore.js');
-        const storeUser = usersStore.getOrCreateUser(userObj);
-        if (storeUser && storeUser.status === 'suspended') {
-          return res.status(403).json({
-            success: false,
-            error: 'Account suspended by administration for guideline violations.',
-            status: 'suspended',
-          });
-        }
-
-        req.user = {
-          ...userObj,
-          ...(storeUser || {}),
-          emailVerified,
-          status: storeUser?.status || 'active',
-          warningReason: storeUser?.warningReason || null,
-          connectionCredits: storeUser?.connectionCredits ?? 5,
-        };
-        return next();
-      }
+      req.user = {
+        uid: userObj.uid,
+        email,
+        name: storeUser?.displayName || userObj.name || (email ? email.split('@')[0] : 'Engineer'),
+        role: effectiveRole,
+        isAdmin,
+        isAnonymous: false,
+        emailVerified,
+        status: storeUser?.status || 'active',
+        warningReason: storeUser?.warningReason || null,
+        connectionCredits: isAdmin ? 9999 : (storeUser?.connectionCredits ?? 5),
+      };
+      return next();
     }
+  }
+
+  // Cryptographic RS256 verification against Google's public certificates (Firebase ID tokens)
+  if (token.includes('.')) {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return res.status(401).json({
+        success: false,
+        error: 'Malformed authentication token.',
+      });
+    }
+
+    const { verifyFirebaseIdToken } = await import('../services/firebaseAdminService.js');
+    const verifiedUser = await verifyFirebaseIdToken(token);
+
+    if (verifiedUser && verifiedUser.uid) {
+      const email = (verifiedUser.email || '').toLowerCase();
+      const emailVerified = verifiedUser.emailVerified === true;
+
+      const userObj = {
+        uid: verifiedUser.uid,
+        email,
+        name: verifiedUser.name || (email ? email.split('@')[0] : 'Engineer'),
+        isAnonymous: false,
+        emailVerified,
+      };
+
+      const { usersStore } = await import('../services/usersStore.js');
+      const storeUser = usersStore.getOrCreateUser(userObj);
+
+      if (storeUser && (storeUser.status === 'suspended' || storeUser.status === 'blocked')) {
+        return res.status(403).json({
+          success: false,
+          error: `Account ${storeUser.status} by administration for guideline violations.`,
+          status: storeUser.status,
+        });
+      }
+
+      const isAdmin = isAuthorizedAdmin(userObj, storeUser);
+      const effectiveRole = isAdmin ? 'admin' : (storeUser?.role || 'member');
+
+      req.user = {
+        uid: userObj.uid,
+        email,
+        name: storeUser?.displayName || userObj.name || (email ? email.split('@')[0] : 'Engineer'),
+        role: effectiveRole,
+        isAdmin,
+        isAnonymous: false,
+        emailVerified,
+        status: storeUser?.status || 'active',
+        warningReason: storeUser?.warningReason || null,
+        connectionCredits: isAdmin ? 9999 : (storeUser?.connectionCredits ?? 5),
+      };
+      return next();
+    }
+  }
 
   // Any unrecognized, forged, or unverified token is rejected with HTTP 401
   return res.status(401).json({
@@ -189,6 +242,7 @@ export async function verifyToken(req, res, next) {
 
 /**
  * Requires valid authenticated user (rejects anonymous / missing auth with 401).
+ * Rejects suspended or blocked users with 403.
  */
 export function requireAuth(req, res, next) {
   if (!req.user || req.user.isAnonymous) {
@@ -197,20 +251,20 @@ export function requireAuth(req, res, next) {
       error: 'Authentication required. Please sign in with an authorized account.',
     });
   }
-  if (req.user.status === 'suspended') {
+  if (req.user.status === 'suspended' || req.user.status === 'blocked') {
     return res.status(403).json({
       success: false,
-      error: 'Account suspended by administration for guideline violations.',
-      status: 'suspended',
+      error: `Account ${req.user.status} by administration for guideline violations.`,
+      status: req.user.status,
     });
   }
   next();
 }
 
 /**
- * Requires an authenticated user with a verified identity (emailVerified: true).
+ * Requires an authenticated user with an active account and verified identity (emailVerified: true).
  * Rejects unauthenticated callers with 401.
- * Rejects unverified callers with 403.
+ * Rejects unverified or inactive callers with 403.
  */
 export function requireVerifiedIdentity(req, res, next) {
   if (!req.user || req.user.isAnonymous) {
@@ -219,11 +273,11 @@ export function requireVerifiedIdentity(req, res, next) {
       error: 'Authentication required. Please sign in with an authorized account.',
     });
   }
-  if (req.user.status === 'suspended') {
+  if (req.user.status === 'suspended' || req.user.status === 'blocked') {
     return res.status(403).json({
       success: false,
-      error: 'Account suspended by administration for guideline violations.',
-      status: 'suspended',
+      error: `Account ${req.user.status} by administration for guideline violations.`,
+      status: req.user.status,
     });
   }
   if (req.user.emailVerified !== true) {
@@ -233,12 +287,19 @@ export function requireVerifiedIdentity(req, res, next) {
       emailVerified: false,
     });
   }
+  if (req.user.status && req.user.status !== 'active') {
+    return res.status(403).json({
+      success: false,
+      error: 'Account must be active to perform this action.',
+      status: req.user.status,
+    });
+  }
   next();
 }
 
 /**
  * Server-side Admin Authorization Gate
- * ONLY authorizes rajshreeakm@gmail.com
+ * ONLY authorizes rajshreeakm@gmail.com with verified email, active status, and server-side role
  * Rejects unauthenticated requests with 401
  * Rejects authenticated non-admin requests with 403
  * NEVER exposes the admin email to unprivileged callers
@@ -251,10 +312,42 @@ export function requireAdmin(req, res, next) {
     });
   }
 
+  if (req.user.status === 'suspended' || req.user.status === 'blocked') {
+    return res.status(403).json({
+      success: false,
+      error: `Account ${req.user.status} by administration.`,
+      status: req.user.status,
+    });
+  }
+
+  if (req.user.status !== 'active') {
+    return res.status(403).json({
+      success: false,
+      error: 'Account must be active for administrative operations.',
+      status: req.user.status,
+    });
+  }
+
+  if (req.user.emailVerified !== true) {
+    return res.status(403).json({
+      success: false,
+      error: 'Unauthorized access. Verified email required for administrative actions.',
+      emailVerified: false,
+    });
+  }
+
   const userEmail = (req.user.email || '').toLowerCase();
   const authorizedEmail = AUTHORIZED_ADMIN_EMAIL.toLowerCase();
 
-  if (userEmail !== authorizedEmail || req.user.role !== 'admin' || !req.user.isAdmin) {
+  const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
+  if (configuredAdminUid && req.user.uid !== configuredAdminUid) {
+    return res.status(403).json({
+      success: false,
+      error: 'Unauthorized access. You do not have permission to view this console.',
+    });
+  }
+
+  if (userEmail !== authorizedEmail || req.user.role !== 'admin' || req.user.isAdmin !== true) {
     return res.status(403).json({
       success: false,
       error: 'Unauthorized access. You do not have permission to view this console.',
@@ -266,6 +359,7 @@ export function requireAdmin(req, res, next) {
 
 export default {
   AUTHORIZED_ADMIN_EMAIL,
+  isAuthorizedAdmin,
   verifyToken,
   requireAuth,
   requireVerifiedIdentity,

@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { getCampaignState } from '../../src/config/campaign.js';
 import { config } from '../config.js';
+import { standardRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -61,7 +62,7 @@ router.get('/auth/client-config', (req, res) => {
 });
 
 // Issues a cryptographic session token for authenticated Firebase members
-router.post('/auth/session', async (req, res) => {
+router.post('/auth/session', standardRateLimiter, async (req, res) => {
   const authHeader = req.headers.authorization || req.headers.Authorization;
   if (!authHeader || typeof authHeader !== 'string') {
     return res.status(401).json({
@@ -89,31 +90,47 @@ router.post('/auth/session', async (req, res) => {
   }
 
   const email = (verifiedUser.email || '').toLowerCase();
-  const { AUTHORIZED_ADMIN_EMAIL } = await import('../middleware/auth.js');
-  const isAdmin = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+  const emailVerified = verifiedUser.emailVerified === true;
 
   const userPayload = {
     uid: verifiedUser.uid,
     email,
     name: verifiedUser.name || (email ? email.split('@')[0] : 'Engineer'),
-    role: isAdmin ? 'admin' : 'member',
-    isAdmin,
     isAnonymous: false,
-    emailVerified: verifiedUser.emailVerified === true,
+    emailVerified,
   };
 
-  const { createSessionToken } = await import('../services/sessionService.js');
   const { usersStore } = await import('../services/usersStore.js');
-
-  const token = createSessionToken(userPayload);
   const storeUser = usersStore.getOrCreateUser(userPayload);
+
+  if (storeUser && (storeUser.status === 'suspended' || storeUser.status === 'blocked')) {
+    return res.status(403).json({
+      success: false,
+      error: `Account ${storeUser.status} by administration for guideline violations.`,
+      status: storeUser.status,
+    });
+  }
+
+  const { isAuthorizedAdmin } = await import('../middleware/auth.js');
+  const isAdmin = isAuthorizedAdmin(userPayload, storeUser);
+
+  const { createSessionToken } = await import('../services/sessionService.js');
+  const token = createSessionToken(userPayload);
 
   res.json({
     success: true,
     token,
     user: {
-      ...userPayload,
-      ...(storeUser || {}),
+      uid: userPayload.uid,
+      email,
+      name: storeUser?.displayName || userPayload.name,
+      role: isAdmin ? 'admin' : (storeUser?.role || 'member'),
+      isAdmin,
+      isAnonymous: false,
+      emailVerified,
+      status: storeUser?.status || 'active',
+      warningReason: storeUser?.warningReason || null,
+      connectionCredits: isAdmin ? 9999 : (storeUser?.connectionCredits ?? 5),
     },
   });
 });

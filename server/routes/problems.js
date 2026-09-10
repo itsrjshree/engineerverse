@@ -12,7 +12,7 @@
  */
 
 import { Router } from 'express';
-import { verifyToken, requireAuth } from '../middleware/auth.js';
+import { verifyToken, requireAuth, requireVerifiedIdentity } from '../middleware/auth.js';
 import { submissionRateLimiter } from '../middleware/rateLimiter.js';
 import { problemsStore } from '../services/problemsStore.js';
 
@@ -101,7 +101,7 @@ router.get('/user/my-solutions', requireAuth, (req, res) => {
  * Strictly authenticated problem submission.
  * Zero fake numbers: starts with 0 supporters.
  */
-router.post('/', requireAuth, submissionRateLimiter, (req, res) => {
+router.post('/', requireVerifiedIdentity, submissionRateLimiter, (req, res) => {
   const { title, category, description, affectedUsers, tags } = req.body;
 
   if (!title || !title.trim() || !category || !category.trim() || !description || !description.trim()) {
@@ -221,7 +221,7 @@ router.post('/:id/support', requireAuth, (req, res) => {
  * Propose a solution to an existing problem and request to connect with author.
  * Strictly requires authentication and deducts 1 connection credit.
  */
-router.post('/:id/solutions', requireAuth, (req, res) => {
+router.post('/:id/solutions', requireVerifiedIdentity, (req, res) => {
   const { proposedSolution, contactPitch, estimatedTimeline, portfolioUrl } = req.body;
 
   if (!proposedSolution || !proposedSolution.trim()) {

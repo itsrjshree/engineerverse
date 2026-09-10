@@ -27,7 +27,7 @@ console.log('='.repeat(70));
 console.log('\n1. Testing Fix 2: SESSION_SECRET Startup Enforcement...');
 {
   const origSecret = process.env.SESSION_SECRET;
-  delete process.env.SESSION_SECRET;
+  process.env.SESSION_SECRET = '';
 
   const { createServer } = await import('../server/index.js');
   let threw = false;
