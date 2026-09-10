@@ -353,9 +353,20 @@ export function AuthModal({
                 <p className="text-amber-200/90 leading-relaxed font-sans">
                   {authError}
                 </p>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Tip: If popups are blocked in the iframe preview, you can open this window in a new tab or use the <strong>Instant Join</strong> tab to continue immediately.
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <p className="text-[10px] text-slate-400">
+                    If popups are restricted in the iframe, open in a new tab:
+                  </p>
+                  <a
+                    href={typeof window !== 'undefined' ? window.location.href : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-amber-200 bg-amber-900/60 hover:bg-amber-800/80 border border-amber-600/60 rounded-lg transition"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Open in New Tab</span>
+                  </a>
+                </div>
               </div>
             )}
 

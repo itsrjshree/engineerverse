@@ -45,8 +45,9 @@ export function securityHeaders(req, res, next) {
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   
 
-  // Allow OAuth popups (Google, GitHub, etc.) to communicate window.closed and message back without COOP block
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  // Allow cross-origin OAuth popups (Google accounts.google.com, GitHub, etc.) to
+  // communicate postMessage back to window.opener and call window.close() without COOP policy blocking
+  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
 
   // XSS Auditor
   res.setHeader('X-XSS-Protection', '1; mode=block');

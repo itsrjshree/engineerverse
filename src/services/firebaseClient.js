@@ -551,8 +551,14 @@ export const authService = {
       userMessage = 'Firebase Authentication is not yet activated in your Firebase Console. Go to Build > Authentication > Click "Get started".';
     } else if (err.code === 'auth/operation-not-allowed') {
       userMessage = `${providerName} sign-in provider is not enabled in Firebase Console. Go to Build > Authentication > Sign-in method to enable it.`;
-    } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+    } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
       userMessage = 'Invalid email or password. Please check your credentials or create a new account.';
+    } else if (err.code === 'auth/invalid-credential') {
+      if (providerName === 'Email' || providerName === 'Password') {
+        userMessage = 'Invalid email or password. Please check your credentials or create a new account.';
+      } else {
+        userMessage = `${providerName} authentication credential was rejected by Firebase (auth/invalid-credential). Please verify in Firebase Console: 1) Authentication > Sign-in method > ${providerName} is Enabled with a project support email; 2) Authentication > Settings > Authorized domains includes your current domain.`;
+      }
     } else if (err.code === 'auth/email-already-in-use') {
       userMessage = 'An account with this email already exists. Please sign in instead.';
     } else if (err.code === 'auth/weak-password') {
