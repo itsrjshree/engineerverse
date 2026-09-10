@@ -18,6 +18,7 @@ import {
   LogOut,
   ShieldCheck,
   AlertTriangle,
+  AlertCircle,
   X,
   ExternalLink,
   CheckCircle2,
@@ -343,30 +344,11 @@ export function AuthModal({
               </button>
             </div>
 
-            {/* Error / Notice Display */}
+            {/* Error Display */}
             {authError && (
-              <div className="p-3.5 bg-amber-950/40 rounded-2xl border border-amber-600/50 space-y-1 text-xs">
-                <div className="flex items-center gap-1.5 text-amber-300 font-bold text-[11px]">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Authentication Notice</span>
-                </div>
-                <p className="text-amber-200/90 leading-relaxed font-sans">
-                  {authError}
-                </p>
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                  <p className="text-[10px] text-slate-400">
-                    If popups are restricted in the iframe, open in a new tab:
-                  </p>
-                  <a
-                    href={typeof window !== 'undefined' ? window.location.href : '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-amber-200 bg-amber-900/60 hover:bg-amber-800/80 border border-amber-600/60 rounded-lg transition"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    <span>Open in New Tab</span>
-                  </a>
-                </div>
+              <div className="p-3 bg-red-950/40 rounded-xl border border-red-500/30 flex items-center gap-2.5 text-xs text-red-200">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span className="leading-snug flex-1">{authError}</span>
               </div>
             )}
 

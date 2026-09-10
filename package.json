@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "node scripts/validate-architecture.js",
-    "test": "node scripts/validate-architecture.js && node scripts/test-contracts.js && node scripts/test-pritee-orchestrator.js && node scripts/test-admin-auth.js && node scripts/test-phase1-security.js"
+    "test": "node scripts/validate-architecture.js && node scripts/test-contracts.js && node scripts/test-pritee-orchestrator.js && node scripts/test-admin-auth.js && node scripts/test-phase1-security.js && node scripts/test-google-oauth-forensics.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

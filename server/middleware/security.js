@@ -45,9 +45,9 @@ export function securityHeaders(req, res, next) {
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   
 
-  // Allow cross-origin OAuth popups (Google accounts.google.com, GitHub, etc.) to
-  // communicate postMessage back to window.opener and call window.close() without COOP policy blocking
-  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
+  // Cross-Origin-Opener-Policy: protects the application context while allowing OAuth popup flows
+  // (e.g. Google Identity, GitHub) to communicate postMessage back to window.opener
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
 
   // XSS Auditor
   res.setHeader('X-XSS-Protection', '1; mode=block');

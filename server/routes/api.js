@@ -38,9 +38,18 @@ router.get('/campaign/state', (req, res) => {
   });
 });
 
+function normalizeServerApiKey(key) {
+  if (!key || typeof key !== 'string') return '';
+  let trimmed = key.trim().replace(/^["']|["']$/g, '');
+  if (trimmed.startsWith('IzaSy') && trimmed.length === 38) {
+    trimmed = 'A' + trimmed;
+  }
+  return trimmed;
+}
+
 // Client Authentication Configuration (public frontend Firebase config)
 router.get('/auth/client-config', (req, res) => {
-  const apiKey = (process.env.VITE_FIREBASE_API_KEY || '').trim();
+  const apiKey = normalizeServerApiKey(process.env.VITE_FIREBASE_API_KEY || '');
   const projectId = (process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || '').trim();
   const authDomain = (process.env.VITE_FIREBASE_AUTH_DOMAIN || (projectId ? `${projectId}.firebaseapp.com` : '')).trim();
   const storageBucket = (process.env.VITE_FIREBASE_STORAGE_BUCKET || (projectId ? `${projectId}.firebasestorage.app` : '')).trim();

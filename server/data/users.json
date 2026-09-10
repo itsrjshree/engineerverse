@@ -19,5 +19,29 @@
     "portfolioUrl": "https://rjshree.com/author/rajshree",
     "createdAt": "2026-01-01T00:00:00.000Z",
     "lastActiveAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "uid": "Y73aZAgX0LdVsD9bZuLSaf1u6ZX2",
+    "email": "itsrjshree@gmail.com",
+    "displayName": "RAJSHREE",
+    "role": "member",
+    "isAdmin": false,
+    "status": "active",
+    "warningReason": null,
+    "warnedAt": null,
+    "suspendedAt": null,
+    "suspendedReason": null,
+    "blockedAt": null,
+    "blockedReason": null,
+    "problemsCount": 0,
+    "solutionsCount": 0,
+    "supportsCount": 0,
+    "connectionCredits": 5,
+    "photoURL": null,
+    "bio": "",
+    "discipline": "Full Stack Systems",
+    "portfolioUrl": "",
+    "createdAt": "2026-09-10T19:11:23.793Z",
+    "lastActiveAt": "2026-09-10T19:11:23.799Z"
   }
 ]
