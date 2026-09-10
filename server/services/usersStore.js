@@ -130,6 +130,10 @@ class UsersStore {
   }
 
   _saveToDiskImmediate() {
+    // In test runner mode, never pollute the committed seed fixture on disk
+    if (process.env.NODE_ENV === 'test' || process.env.ENGINEERVERSE_TEST_RUNNER === 'true') {
+      return;
+    }
     this._ensureDirectories();
     try {
       const userList = Array.from(this.usersById.values());
@@ -240,16 +244,23 @@ class UsersStore {
     let existing = uid ? this.usersById.get(uid) : null;
 
     // 2. If not found by UID, check if email is registered under another UID (identity reconciliation)
-    if (!existing && email && this.emailToUid.has(email)) {
+    // CRITICAL SECURITY: ONLY reconcile/link if incoming credential has VERIFIED email
+    if (!existing && email && this.emailToUid.has(email) && userObj.emailVerified === true) {
       const canonicalUid = this.emailToUid.get(email);
       existing = this.usersById.get(canonicalUid);
       if (existing && uid && existing.uid !== uid) {
-        // Migrate / link UID to the new authenticated credential
-        this.usersById.delete(existing.uid);
-        this._deleteAvatarFilesForUid(existing.uid);
-        existing.uid = uid;
-        this.usersById.set(uid, existing);
-        this.emailToUid.set(email, uid);
+        const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
+        if (existing.isAdmin && configuredAdminUid && uid !== configuredAdminUid) {
+          // Do not link admin account if UID does not match configured admin UID
+          existing = null;
+        } else {
+          // Migrate / link UID to the new authenticated credential
+          this.usersById.delete(existing.uid);
+          this._deleteAvatarFilesForUid(existing.uid);
+          existing.uid = uid;
+          this.usersById.set(uid, existing);
+          this.emailToUid.set(email, uid);
+        }
       }
     }
 
@@ -257,30 +268,37 @@ class UsersStore {
       existing.lastActiveAt = new Date().toISOString();
       const isTargetAdminEmail = (existing.email || email) === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
       const isEmailVerified = userObj.emailVerified === true;
+      const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
+      const uidMatches = !configuredAdminUid || existing.uid === configuredAdminUid;
 
-      // Only elevate or retain admin privileges if email is verified and status is active
+      // Only elevate or retain admin privileges if email is verified, UID matches, and status is active
       if (isTargetAdminEmail) {
-        if (isEmailVerified && existing.status === 'active') {
+        if (isEmailVerified && existing.status === 'active' && uidMatches) {
           existing.isAdmin = true;
           existing.role = 'admin';
           existing.connectionCredits = 9999;
-        } else if (!isEmailVerified) {
-          // Unverified identities are never granted active admin privileges
-          existing.isAdmin = false;
-          existing.role = 'member';
         }
       }
       if (userObj.displayName && (!existing.displayName || existing.displayName === 'Community Member')) {
         existing.displayName = userObj.displayName.trim();
       }
       this._scheduleSave();
-      return { ...existing };
+
+      const result = { ...existing };
+      // Unverified caller can never receive active admin permissions in session
+      if (isTargetAdminEmail && (!isEmailVerified || !uidMatches)) {
+        result.isAdmin = false;
+        result.role = 'member';
+      }
+      return result;
     }
 
     // 3. Create single unique record
     const finalUid = uid || 'user_' + Math.random().toString(36).substring(2, 10);
     const isTargetAdminEmail = email === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
-    const isNewUserAdmin = isTargetAdminEmail && userObj.emailVerified === true;
+    const configuredAdminUid = (process.env.ADMIN_FIREBASE_UID || process.env.ADMIN_UID || '').trim();
+    const uidMatches = !configuredAdminUid || finalUid === configuredAdminUid;
+    const isNewUserAdmin = isTargetAdminEmail && userObj.emailVerified === true && uidMatches;
 
     const newUser = {
       uid: finalUid,

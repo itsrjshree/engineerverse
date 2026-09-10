@@ -102,8 +102,7 @@ export async function verifyToken(req, res, next) {
 
     if (
       token === 'token_user_other' ||
-      token === 'test_user_token' ||
-      token === 'engineer.other@example.com'
+      token === 'test_user_token'
     ) {
       req.user = {
         uid: 'user_test_1',

@@ -41,8 +41,9 @@ export function securityHeaders(req, res, next) {
   // Prevent MIME-sniffing
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
-  // Prevent clickjacking in outside iframes (allow same-origin or preview container)
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // Prevent clickjacking in outside iframes while allowing preview container / AI Studio iframe
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  
 
   // Allow OAuth popups (Google, GitHub, etc.) to communicate window.closed and message back without COOP block
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
@@ -73,7 +74,7 @@ export function securityHeaders(req, res, next) {
     "font-src 'self' https://fonts.gstatic.com",
     "connect-src 'self' https://api.cloudinary.com https://generativelanguage.googleapis.com https://openrouter.ai https://www.googleapis.com https://oauth2.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.firebaseio.com https://*.googleapis.com ws: wss:",
     "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
-    "frame-ancestors 'self'",
+    "frame-ancestors 'self' https://*.google.com https://*.run.app https://*.googleusercontent.com https://ai.studio https://*.aistudio.google.com",
   ];
   res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
 
@@ -114,6 +115,10 @@ function sanitizeString(str) {
   sanitized = sanitized.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gis, '');
   // Strip all remaining HTML tags
   sanitized = sanitized.replace(/<[^>]+>/g, '');
+  // Neutralize javascript: and vbscript: pseudo-protocol URLs
+  sanitized = sanitized.replace(/(?:java|vb)script\s*:/gis, '');
+  // Neutralize event-handler attributes (onload=, onerror=, onclick=, etc.)
+  sanitized = sanitized.replace(/\bon[a-z]+\s*=/gis, '');
   return sanitized.trim();
 }
 

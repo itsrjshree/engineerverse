@@ -17,9 +17,9 @@ let certsExpiryTime = 0;
 /**
  * Fetches and caches Google's public x509 certificates for Firebase ID Token verification
  */
-async function getGooglePublicCertificates() {
+async function getGooglePublicCertificates(forceRefresh = false) {
   const now = Date.now();
-  if (cachedCerts && now < certsExpiryTime) {
+  if (!forceRefresh && cachedCerts && now < certsExpiryTime) {
     return cachedCerts;
   }
 
@@ -137,15 +137,21 @@ export async function verifyFirebaseIdToken(token) {
   }
 
   // 5. Retrieve Google public certificates
-  const certs = await getGooglePublicCertificates();
-  const cert = certs && typeof certs === 'object' ? certs[header.kid] : null;
+  let certs = await getGooglePublicCertificates();
+  let cert = certs && typeof certs === 'object' ? certs[header.kid] : null;
 
   if (!cert) {
-    // If cert for kid is not found directly, attempt Google tokeninfo fallback with strict audience/sub checks
-    return await verifyWithGoogleTokenInfo(token, uid, configuredProjectId);
+    // If cert for kid is not found in cache, attempt one forced refresh in case of key rotation
+    certs = await getGooglePublicCertificates(true);
+    cert = certs && typeof certs === 'object' ? certs[header.kid] : null;
   }
 
-  // 6. Cryptographic signature check with Node's native crypto
+  if (!cert) {
+    // Unknown or untrusted key ID; reject token immediately
+    return null;
+  }
+
+  // 6. Cryptographic RS256 signature check with Node's native crypto
   try {
     const verifier = crypto.createVerify('RSA-SHA256');
     verifier.update(`${parts[0]}.${parts[1]}`);
@@ -164,56 +170,6 @@ export async function verifyFirebaseIdToken(token) {
     };
   } catch (err) {
     console.warn('[Token Verifier] Native crypto verification error:', err.message);
-    return null;
-  }
-}
-
-/**
- * Fallback verification via Google's tokeninfo endpoint if public certs are unreachable
- * Strictly validates audience, subject, expiration, and claims to prevent cross-client token reuse
- */
-async function verifyWithGoogleTokenInfo(token, expectedSub, expectedAud) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`, {
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) return null;
-
-    const info = await res.json();
-    if (!info || typeof info !== 'object') {
-      return null;
-    }
-
-    // Verify subject
-    if (!info.sub || info.sub !== expectedSub) {
-      return null;
-    }
-
-    // Verify audience matches expected project to block arbitrary OAuth token reuse
-    if (expectedAud && info.aud !== expectedAud) {
-      return null;
-    }
-
-    // Verify expiration
-    const now = Math.floor(Date.now() / 1000);
-    if (info.exp && parseInt(info.exp, 10) < now) {
-      return null;
-    }
-
-    return {
-      uid: info.sub,
-      email: (info.email || '').trim().toLowerCase(),
-      name: info.name || '',
-      picture: info.picture || '',
-      emailVerified: info.email_verified === true || info.email_verified === 'true',
-    };
-  } catch {
     return null;
   }
 }
