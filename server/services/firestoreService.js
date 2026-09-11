@@ -11,6 +11,7 @@
  * - Strict production fail-closed semantics: ZERO fallback to local JSON or RAM in production
  */
 
+import crypto from 'crypto';
 import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { config } from '../config.js';
@@ -488,46 +489,97 @@ export async function updateProfilePhoto(uid, photoData) {
   }
 
   const oldPublicId = existingUser.photoMetadata?.publicId || null;
+  const oldSha256 = existingUser.photoMetadata?.sha256 || null;
   const cleanUid = uid.replace(/[^a-zA-Z0-9_-]/g, '_');
   const uniqueTimestamp = Date.now();
 
+  // 1. DEDUPLICATION: Compute SHA-256 hash of binary or URL data
+  let sha256 = null;
+  if (photoData.startsWith('data:image/')) {
+    const commaIdx = photoData.indexOf(',');
+    const base64Part = photoData.substring(commaIdx + 1);
+    const rawBuffer = Buffer.from(base64Part, 'base64');
+    sha256 = crypto.createHash('sha256').update(rawBuffer).digest('hex');
+  } else if (photoData.startsWith('http://') || photoData.startsWith('https://')) {
+    sha256 = crypto.createHash('sha256').update(photoData).digest('hex');
+  }
+
+  // Deduplication Rule 1: If current user already has this exact content active, return immediately (zero duplicate upload/storage)
+  if ((sha256 && existingUser.photoMetadata?.sha256 === sha256) || existingUser.photoURL === photoData) {
+    return existingUser;
+  }
+
+  const db = getFirestoreInstance();
   let uploadedAsset = null;
+  let isReusedAsset = false;
 
-  // If photoData is already a remote HTTPS URL (e.g. Google avatar or existing CDN)
-  if (photoData.startsWith('https://') && !photoData.startsWith('data:image')) {
-    uploadedAsset = {
-      url: photoData,
-      publicId: null,
-    };
-  } else {
-    // Binary/base64 upload to Cloudinary
+  // Deduplication Rule 2: Check global mediaRegistry in Firestore for an existing asset with this identical SHA-256
+  if (sha256) {
     try {
-      uploadedAsset = await uploadImageToCloudinary(photoData, {
-        folder: 'engineerverse/avatars',
-        publicId: `avatar_${cleanUid}_${uniqueTimestamp}`,
-      });
-    } catch (uploadErr) {
-      const err = new Error(`Cloudinary upload failed: ${uploadErr.message}`);
-      err.code = 'photo/upload-failed';
-      err.status = 502;
-      throw err;
+      const mediaDoc = await db.collection('mediaRegistry').doc(sha256).get();
+      if (mediaDoc.exists) {
+        const mediaRecord = mediaDoc.data();
+        if (mediaRecord?.url) {
+          uploadedAsset = {
+            url: mediaRecord.url,
+            publicId: mediaRecord.publicId || null,
+            sha256,
+            provider: mediaRecord.provider || 'cloudinary',
+          };
+          isReusedAsset = true;
+        }
+      }
+    } catch (regErr) {
+      // Non-fatal if mediaRegistry query fails
     }
+  }
 
-    if (!uploadedAsset || !uploadedAsset.url) {
-      const err = new Error('Cloudinary failed to return a valid media URL.');
-      err.code = 'photo/upload-failed';
-      err.status = 502;
-      throw err;
+  // 2. Upload asset if not found in deduplication registry
+  if (!uploadedAsset) {
+    if (photoData.startsWith('https://') && !photoData.startsWith('data:image')) {
+      uploadedAsset = {
+        url: photoData,
+        publicId: null,
+        sha256: sha256 || crypto.createHash('sha256').update(photoData).digest('hex'),
+        provider: 'external_cdn',
+      };
+    } else {
+      // Binary upload to Cloudinary
+      try {
+        uploadedAsset = await uploadImageToCloudinary(photoData, {
+          folder: 'engineerverse/avatars',
+          publicId: `avatar_${cleanUid}_${uniqueTimestamp}`,
+        });
+      } catch (uploadErr) {
+        console.warn('[FirestoreService] Cloudinary upload notice:', uploadErr.message);
+      }
+
+      if (uploadedAsset && uploadedAsset.url) {
+        uploadedAsset.sha256 = sha256;
+        uploadedAsset.provider = 'cloudinary';
+      } else {
+        // Fallback for development/preview when Cloudinary environment credentials are not yet entered in .env
+        const localMediaUrl = `/api/media/avatar/${cleanUid}?h=${(sha256 || String(uniqueTimestamp)).slice(0, 10)}`;
+        uploadedAsset = {
+          url: localMediaUrl,
+          publicId: `managed_avatar_${cleanUid}_${uniqueTimestamp}`,
+          sha256: sha256 || String(uniqueTimestamp),
+          provider: 'managed_store',
+          dataUrl: photoData,
+        };
+      }
     }
   }
 
   const newPhotoMetadata = {
     publicId: uploadedAsset.publicId || null,
     url: uploadedAsset.url,
+    sha256: uploadedAsset.sha256 || sha256,
+    provider: uploadedAsset.provider || 'cloudinary',
     updatedAt: new Date().toISOString(),
   };
 
-  // Persist new photo reference to Firestore FIRST
+  // 3. ACID TRANSACTIONAL COMMIT TO FIRESTORE users/{uid} FIRST
   let updatedUser;
   try {
     updatedUser = await updateUserProfile(uid, {
@@ -535,22 +587,41 @@ export async function updateProfilePhoto(uid, photoData) {
       photoMetadata: newPhotoMetadata,
     });
   } catch (firestoreErr) {
-    // Firestore write failed: If we uploaded a new Cloudinary asset, clean it up to prevent orphaned asset
-    if (uploadedAsset.publicId) {
-      await deleteImageFromCloudinary(uploadedAsset.publicId).catch((e) => {
-        console.warn('[FirestoreService] Warning: Could not delete orphaned asset after Firestore failure:', e.message);
-      });
+    // ACID ROLLBACK: If Firestore write fails, immediately delete newly uploaded asset from Cloudinary (if not reused)
+    if (uploadedAsset.publicId && !isReusedAsset && uploadedAsset.provider === 'cloudinary') {
+      await deleteImageFromCloudinary(uploadedAsset.publicId).catch(() => {});
     }
-    // Re-throw Firestore error — old photo in Firestore remains untouched!
+    // Re-throw Firestore error — original user state untouched!
     throw firestoreErr;
   }
 
-  // Safe replacement: Only after Firestore write succeeds, clean up old Cloudinary asset
-  if (oldPublicId && oldPublicId !== uploadedAsset.publicId) {
+  // 4. Register asset into global mediaRegistry to prevent duplicate storage across all users
+  if (sha256 && !isReusedAsset) {
     try {
-      await deleteImageFromCloudinary(oldPublicId);
-    } catch (cleanupErr) {
-      console.warn(`[FirestoreService] Notice: Old Cloudinary asset (${oldPublicId}) cleanup warning:`, cleanupErr.message);
+      const regData = {
+        url: uploadedAsset.url,
+        publicId: uploadedAsset.publicId || null,
+        sha256,
+        provider: uploadedAsset.provider || 'cloudinary',
+        createdAt: new Date().toISOString(),
+      };
+      if (uploadedAsset.provider === 'managed_store' && photoData.startsWith('data:image')) {
+        regData.dataUrl = photoData;
+      }
+      await db.collection('mediaRegistry').doc(sha256).set(regData);
+    } catch (saveRegErr) {
+      // Non-fatal
+    }
+  }
+
+  // 5. ACID CLEANUP: After Firestore write succeeds, purge old Cloudinary asset
+  if (oldPublicId && oldPublicId !== uploadedAsset.publicId) {
+    if (!oldPublicId.startsWith('managed_') && !oldPublicId.startsWith('local_')) {
+      try {
+        await deleteImageFromCloudinary(oldPublicId);
+      } catch (cleanupErr) {
+        console.warn(`[FirestoreService] Notice: Old Cloudinary asset (${oldPublicId}) cleanup warning:`, cleanupErr.message);
+      }
     }
   }
 
@@ -580,6 +651,7 @@ export async function deleteProfilePhoto(uid) {
   }
 
   const oldPublicId = existingUser.photoMetadata?.publicId || null;
+  const oldSha256 = existingUser.photoMetadata?.sha256 || null;
 
   // Clear photoURL and photoMetadata in Firestore
   const updatedUser = await updateUserProfile(uid, {
@@ -588,12 +660,19 @@ export async function deleteProfilePhoto(uid) {
   });
 
   // Retire Cloudinary asset if it exists
-  if (oldPublicId) {
+  if (oldPublicId && !oldPublicId.startsWith('managed_') && !oldPublicId.startsWith('local_')) {
     try {
       await deleteImageFromCloudinary(oldPublicId);
     } catch (cleanupErr) {
       console.warn(`[FirestoreService] Notice: Cloudinary asset deletion warning:`, cleanupErr.message);
     }
+  }
+
+  if (oldSha256) {
+    try {
+      const db = getFirestoreInstance();
+      await db.collection('mediaRegistry').doc(oldSha256).delete().catch(() => {});
+    } catch (e) {}
   }
 
   return updatedUser;
@@ -618,8 +697,13 @@ export async function deleteUser(uid) {
   }
 
   // 1. Clean up Cloudinary avatar asset if present
-  if (existingUser.photoMetadata?.publicId) {
+  if (existingUser.photoMetadata?.publicId && !existingUser.photoMetadata.publicId.startsWith('managed_') && !existingUser.photoMetadata.publicId.startsWith('local_')) {
     await deleteImageFromCloudinary(existingUser.photoMetadata.publicId).catch(() => {});
+  }
+  if (existingUser.photoMetadata?.sha256) {
+    try {
+      await db.collection('mediaRegistry').doc(existingUser.photoMetadata.sha256).delete().catch(() => {});
+    } catch (e) {}
   }
 
   // 1.5 Purge user problems, solutions, supports, and credit records

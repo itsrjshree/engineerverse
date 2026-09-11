@@ -32,12 +32,27 @@ export const config = {
   },
 
   // Cloudinary media pipeline (Server Only)
-  cloudinary: {
-    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
-    apiKey: process.env.CLOUDINARY_API_KEY || '',
-    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
-    isConfigured: Boolean(process.env.CLOUDINARY_API_SECRET && process.env.CLOUDINARY_CLOUD_NAME),
-  },
+  cloudinary: (() => {
+    let cloudName = process.env.CLOUDINARY_CLOUD_NAME || '';
+    let apiKey = process.env.CLOUDINARY_API_KEY || '';
+    let apiSecret = process.env.CLOUDINARY_API_SECRET || '';
+
+    if (process.env.CLOUDINARY_URL) {
+      try {
+        const parsed = new URL(process.env.CLOUDINARY_URL);
+        cloudName = parsed.hostname;
+        apiKey = decodeURIComponent(parsed.username);
+        apiSecret = decodeURIComponent(parsed.password);
+      } catch (e) {}
+    }
+
+    return {
+      cloudName,
+      apiKey,
+      apiSecret,
+      isConfigured: Boolean(cloudName && apiKey && apiSecret),
+    };
+  })(),
 
   // Security & Rate Limits
   security: {

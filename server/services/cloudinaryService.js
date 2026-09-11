@@ -67,7 +67,8 @@ export async function uploadImageToCloudinary(fileData, { folder = 'engineervers
     const toSign = sortedKeys.map((k) => `${k}=${params[k]}`).join('&') + apiSecret;
     const signature = crypto.createHash('sha1').update(toSign).digest('hex');
 
-    const formData = new URLSearchParams();
+    // Use native FormData to safely transport base64/binary payloads without URL encoding overhead
+    const formData = new FormData();
     formData.append('file', fileData);
     formData.append('api_key', apiKey);
     formData.append('timestamp', String(timestamp));
@@ -90,6 +91,8 @@ export async function uploadImageToCloudinary(fileData, { folder = 'engineervers
         success: true,
         url: result.secure_url || result.url,
         publicId: result.public_id,
+        format: result.format,
+        bytes: result.bytes,
       };
     } else {
       const errText = await response.text();
@@ -116,7 +119,7 @@ export async function deleteImageFromCloudinary(publicId) {
     const toSign = `invalidate=true&public_id=${publicId}&timestamp=${timestamp}` + apiSecret;
     const signature = crypto.createHash('sha1').update(toSign).digest('hex');
 
-    const formData = new URLSearchParams();
+    const formData = new FormData();
     formData.append('public_id', publicId);
     formData.append('api_key', apiKey);
     formData.append('timestamp', String(timestamp));

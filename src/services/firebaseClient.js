@@ -362,9 +362,20 @@ export const authService = {
         if (res.ok) {
           const data = await res.json();
           if (data.user) serverUser = data.user;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          return {
+            success: false,
+            error: errData.error || 'Server failed to update profile.',
+            code: errData.code || 'profile/update-failed',
+          };
         }
       } catch (err) {
         console.warn('[AuthService] Backend profile update notice:', err.message);
+        return {
+          success: false,
+          error: err.message || 'Network error updating profile.',
+        };
       }
     }
 

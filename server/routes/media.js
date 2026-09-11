@@ -58,6 +58,35 @@ router.get('/avatar/:uid', async (req, res) => {
       return res.redirect(302, user.photoURL);
     }
 
+    // Check if media is stored in mediaRegistry
+    if (user?.photoMetadata?.sha256) {
+      try {
+        const { getFirestoreInstance } = await import('../services/firestoreService.js');
+        const db = getFirestoreInstance();
+        const mediaDoc = await db.collection('mediaRegistry').doc(user.photoMetadata.sha256).get();
+        if (mediaDoc.exists) {
+          const media = mediaDoc.data();
+          if (media?.url && (media.url.startsWith('https://') || media.url.startsWith('http://'))) {
+            return res.redirect(302, media.url);
+          }
+          if (media?.dataUrl && media.dataUrl.startsWith('data:image/')) {
+            const commaIdx = media.dataUrl.indexOf(',');
+            const header = media.dataUrl.substring(0, commaIdx);
+            const base64 = media.dataUrl.substring(commaIdx + 1);
+            const mime = (header.match(/data:(image\/[a-zA-Z0-9+.-]+);base64/) || [])[1] || 'image/webp';
+            const buffer = Buffer.from(base64, 'base64');
+            res.setHeader('Content-Type', mime);
+            res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+            return res.send(buffer);
+          }
+        }
+      } catch (mediaErr) {
+        console.warn('[MediaRouter] mediaRegistry lookup notice:', mediaErr.message);
+      }
+    }
+
     // Dynamic initial avatar SVG fallback (zero disk dependence)
     const initialChar = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
     const svg = generateInitialAvatarSvg(initialChar);

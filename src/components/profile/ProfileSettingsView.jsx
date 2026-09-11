@@ -185,13 +185,38 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
     }
   };
 
-  const handleClearPhoto = () => {
+  const handleClearPhoto = async () => {
     setPhotoURL('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-    setSuccessToast('Profile photo removed. Initial letter avatar will be displayed.');
-    setTimeout(() => setSuccessToast(''), 3500);
+
+    if (user?.photoURL) {
+      setIsSaving(true);
+      try {
+        const result = await authService.updateUserProfile({
+          displayName,
+          bio,
+          discipline,
+          portfolioUrl,
+          photoURL: '',
+        });
+        if (result.success) {
+          setUser(result.user);
+          setSuccessToast('Profile photo purged from Cloudinary & Firestore in real time.');
+          setTimeout(() => setSuccessToast(''), 4000);
+        } else {
+          setErrorToast(result.error || 'Failed to remove photo.');
+        }
+      } catch (err) {
+        setErrorToast(err.message || 'Error removing photo.');
+      } finally {
+        setIsSaving(false);
+      }
+    } else {
+      setSuccessToast('Profile photo cleared.');
+      setTimeout(() => setSuccessToast(''), 3000);
+    }
   };
 
   // Reset photo error when photo changes
