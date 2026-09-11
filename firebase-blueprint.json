@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "users": {
+      "title": "users",
+      "description": "Canonical user accounts and engineer profiles in ENGINEERVERSE",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase UID (document key)" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "emailVerified": { "type": "boolean", "description": "Whether the email is verified" },
+        "provider": { "type": "string", "description": "Auth provider identifier" },
+        "displayName": { "type": "string", "description": "Engineer display name" },
+        "bio": { "type": "string", "description": "Engineering bio and philosophy" },
+        "discipline": { "type": "string", "description": "Primary engineering discipline" },
+        "portfolioUrl": { "type": "string", "description": "Personal or project portfolio URL" },
+        "photoURL": { "type": "string", "nullable": true, "description": "Cloudinary CDN avatar URL" },
+        "photoMetadata": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+            "publicId": { "type": "string" },
+            "url": { "type": "string" },
+            "updatedAt": { "type": "string" }
+          },
+          "description": "Cloudinary asset reference and tracking metadata"
+        },
+        "role": { "type": "string", "enum": ["admin", "member"], "description": "Platform role" },
+        "isAdmin": { "type": "boolean", "description": "Administrative authority flag" },
+        "status": { "type": "string", "enum": ["active", "warned", "suspended", "blocked"], "description": "Account status" },
+        "warningReason": { "type": "string", "nullable": true },
+        "warnedAt": { "type": "string", "nullable": true },
+        "suspendedReason": { "type": "string", "nullable": true },
+        "suspendedAt": { "type": "string", "nullable": true },
+        "blockedReason": { "type": "string", "nullable": true },
+        "blockedAt": { "type": "string", "nullable": true },
+        "connectionCredits": { "type": "number", "description": "Available connection credits" },
+        "problemsCount": { "type": "number", "description": "Total engineering problems posted" },
+        "solutionsCount": { "type": "number", "description": "Total solutions contributed" },
+        "supportsCount": { "type": "number", "description": "Total problems supported" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of account creation" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" },
+        "lastActiveAt": { "type": "string", "description": "ISO timestamp of last activity" }
+      },
+      "required": ["uid", "email", "role", "status", "connectionCredits", "createdAt", "updatedAt"]
+    },
+    "auditLogs": {
+      "title": "auditLogs",
+      "description": "Administrative and security audit trails",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "actorId": { "type": "string" },
+        "targetUid": { "type": "string", "nullable": true },
+        "details": { "type": "object" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "action", "actorId", "timestamp"]
+    }
+  },
+  "firestoreRules": "firestore.rules"
+}

@@ -202,12 +202,13 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
   // Sync state from active user
   useEffect(() => {
     async function loadProfile() {
-      const active = propUser || (await authService.getCurrentUser());
+      const refreshed = await authService.refreshCurrentUser();
+      const active = refreshed || propUser || (await authService.getCurrentUser());
       if (active) {
         setUser(active);
         setDisplayName(active.displayName || active.email?.split('@')[0] || 'Engineer');
-        setBio(active.bio || localStorage.getItem(`ev_user_bio_${active.uid || active.email}`) || '');
-        setDiscipline(active.discipline || localStorage.getItem(`ev_user_discipline_${active.uid || active.email}`) || 'Full Stack Systems');
+        setBio(active.bio || '');
+        setDiscipline(active.discipline || 'Full Stack Systems');
         setPortfolioUrl(active.portfolioUrl || '');
         setPhotoURL(active.photoURL || '');
         const savedTheme = localStorage.getItem(`ev_user_avatar_theme_${active.uid || active.email}`);

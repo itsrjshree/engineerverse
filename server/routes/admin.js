@@ -36,10 +36,10 @@ router.get('/verify-session', requireAdmin, (req, res) => {
 });
 
 // Admin Telemetry & Overview
-router.get('/overview', requireAdmin, (req, res) => {
+router.get('/overview', requireAdmin, async (req, res) => {
   const metrics = analyticsStore.getMetrics();
   const allProblems = problemsStore.getAllForAdmin();
-  const allUsers = usersStore.getAllUsers();
+  const allUsers = await usersStore.getAllUsers();
 
   res.json({
     success: true,
@@ -143,8 +143,8 @@ router.patch('/problems/:id/status', requireAdmin, (req, res) => {
 // ============================================================================
 
 // List all registered users
-router.get('/users', requireAdmin, (req, res) => {
-  const users = usersStore.getAllUsers();
+router.get('/users', requireAdmin, async (req, res) => {
+  const users = await usersStore.getAllUsers();
   res.json({
     success: true,
     total: users.length,
@@ -153,9 +153,9 @@ router.get('/users', requireAdmin, (req, res) => {
 });
 
 // Warn a user
-router.post('/users/:uid/warn', requireAdmin, (req, res) => {
+router.post('/users/:uid/warn', requireAdmin, async (req, res) => {
   const { reason } = req.body;
-  const result = usersStore.warnUser(req.params.uid, reason, req.user.uid);
+  const result = await usersStore.warnUser(req.params.uid, reason, req.user.uid);
 
   if (!result.success) {
     return res.status(400).json(result);
@@ -169,9 +169,9 @@ router.post('/users/:uid/warn', requireAdmin, (req, res) => {
 });
 
 // Suspend a user
-router.post('/users/:uid/suspend', requireAdmin, (req, res) => {
+router.post('/users/:uid/suspend', requireAdmin, async (req, res) => {
   const { reason } = req.body;
-  const result = usersStore.suspendUser(req.params.uid, reason, req.user.uid);
+  const result = await usersStore.suspendUser(req.params.uid, reason, req.user.uid);
 
   if (!result.success) {
     return res.status(400).json(result);
@@ -185,9 +185,9 @@ router.post('/users/:uid/suspend', requireAdmin, (req, res) => {
 });
 
 // Block a user permanently
-router.post('/users/:uid/block', requireAdmin, (req, res) => {
+router.post('/users/:uid/block', requireAdmin, async (req, res) => {
   const { reason } = req.body;
-  const result = usersStore.blockUser(req.params.uid, reason, req.user.uid);
+  const result = await usersStore.blockUser(req.params.uid, reason, req.user.uid);
 
   if (!result.success) {
     return res.status(400).json(result);
@@ -201,8 +201,8 @@ router.post('/users/:uid/block', requireAdmin, (req, res) => {
 });
 
 // Reactivate a user
-router.post('/users/:uid/reactivate', requireAdmin, (req, res) => {
-  const result = usersStore.reactivateUser(req.params.uid, req.user.uid);
+router.post('/users/:uid/reactivate', requireAdmin, async (req, res) => {
+  const result = await usersStore.reactivateUser(req.params.uid, req.user.uid);
 
   if (!result.success) {
     return res.status(400).json(result);
@@ -216,9 +216,9 @@ router.post('/users/:uid/reactivate', requireAdmin, (req, res) => {
 });
 
 // Adjust user connection credits (Admin authority)
-router.post('/users/:uid/credits', requireAdmin, (req, res) => {
+router.post('/users/:uid/credits', requireAdmin, async (req, res) => {
   const { credits } = req.body;
-  const result = usersStore.setUserCredits(req.params.uid, credits, req.user.uid);
+  const result = await usersStore.setUserCredits(req.params.uid, credits, req.user.uid);
 
   if (!result.success) {
     return res.status(400).json(result);
@@ -226,7 +226,7 @@ router.post('/users/:uid/credits', requireAdmin, (req, res) => {
 
   res.json({
     success: true,
-    message: `User connection credits updated to ${result.user.connectionCredits}.`,
+    message: `User connection credits updated to ${result.user?.connectionCredits || credits}.`,
     user: result.user,
   });
 });
@@ -235,8 +235,8 @@ router.post('/users/:uid/credits', requireAdmin, (req, res) => {
 // AUDIT LOGS & EVENT JOURNAL
 // ============================================================================
 
-router.get('/logs', requireAdmin, (req, res) => {
-  const logs = usersStore.getAuditLogs();
+router.get('/logs', requireAdmin, async (req, res) => {
+  const logs = await usersStore.getAuditLogs();
   res.json({
     success: true,
     total: logs.length,

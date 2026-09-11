@@ -110,7 +110,16 @@ router.post('/auth/session', standardRateLimiter, async (req, res) => {
   };
 
   const { usersStore } = await import('../services/usersStore.js');
-  const storeUser = usersStore.getOrCreateUser(userPayload);
+  let storeUser = null;
+  try {
+    storeUser = await usersStore.getOrCreateUser(userPayload);
+  } catch (err) {
+    return res.status(err.status || 503).json({
+      success: false,
+      error: err.message || 'Database service unavailable.',
+      code: err.code || 'firestore/error',
+    });
+  }
 
   if (storeUser && (storeUser.status === 'suspended' || storeUser.status === 'blocked')) {
     return res.status(403).json({
@@ -156,17 +165,25 @@ router.get('/auth/me', async (req, res) => {
       });
     }
 
-    const { usersStore } = await import('../services/usersStore.js');
-    const storeUser = usersStore.getOrCreateUser(req.user);
+    try {
+      const { usersStore } = await import('../services/usersStore.js');
+      const storeUser = await usersStore.getOrCreateUser(req.user);
 
-    res.json({
-      success: true,
-      authenticated: true,
-      user: {
-        ...req.user,
-        ...storeUser,
-      },
-    });
+      res.json({
+        success: true,
+        authenticated: true,
+        user: {
+          ...req.user,
+          ...storeUser,
+        },
+      });
+    } catch (err) {
+      res.status(err.status || 503).json({
+        success: false,
+        error: err.message || 'Database service unavailable.',
+        code: err.code || 'firestore/error',
+      });
+    }
   });
 });
 
@@ -184,25 +201,33 @@ router.put('/auth/profile', async (req, res) => {
     const { displayName, bio, discipline, photoURL, portfolioUrl } = req.body || {};
     const { usersStore } = await import('../services/usersStore.js');
 
-    // Ensure user exists first
-    usersStore.getOrCreateUser(req.user);
+    try {
+      // Ensure user exists first in Firestore
+      await usersStore.getOrCreateUser(req.user);
 
-    const updatedUser = usersStore.updateUserProfile(req.user.uid, {
-      displayName,
-      bio,
-      discipline,
-      photoURL,
-      portfolioUrl,
-    });
+      const updatedUser = await usersStore.updateUserProfile(req.user.uid, {
+        displayName,
+        bio,
+        discipline,
+        photoURL,
+        portfolioUrl,
+      });
 
-    res.json({
-      success: true,
-      message: 'Profile updated successfully.',
-      user: {
-        ...req.user,
-        ...(updatedUser || {}),
-      },
-    });
+      res.json({
+        success: true,
+        message: 'Profile updated successfully.',
+        user: {
+          ...req.user,
+          ...(updatedUser || {}),
+        },
+      });
+    } catch (err) {
+      res.status(err.status || 500).json({
+        success: false,
+        error: err.message || 'Failed to update profile.',
+        code: err.code || 'profile/update-error',
+      });
+    }
   });
 });
 
@@ -227,25 +252,33 @@ router.post('/auth/upload-avatar', async (req, res) => {
       });
     }
 
-    const { usersStore } = await import('../services/usersStore.js');
-    usersStore.getOrCreateUser(req.user);
+    try {
+      const { usersStore } = await import('../services/usersStore.js');
+      await usersStore.getOrCreateUser(req.user);
 
-    const updatedUser = usersStore.updateUserProfile(req.user.uid, {
-      photoURL: finalPhoto,
-    });
+      const updatedUser = await usersStore.updateUserProfile(req.user.uid, {
+        photoURL: finalPhoto,
+      });
 
-    const activePhoto = updatedUser ? updatedUser.photoURL : finalPhoto;
+      const activePhoto = updatedUser ? updatedUser.photoURL : finalPhoto;
 
-    res.json({
-      success: true,
-      message: 'Profile photo uploaded successfully.',
-      photoURL: activePhoto,
-      user: {
-        ...req.user,
-        ...(updatedUser || {}),
+      res.json({
+        success: true,
+        message: 'Profile photo uploaded successfully.',
         photoURL: activePhoto,
-      },
-    });
+        user: {
+          ...req.user,
+          ...(updatedUser || {}),
+          photoURL: activePhoto,
+        },
+      });
+    } catch (err) {
+      res.status(err.status || 500).json({
+        success: false,
+        error: err.message || 'Failed to upload profile photo.',
+        code: err.code || 'photo/upload-error',
+      });
+    }
   });
 });
 
@@ -260,9 +293,19 @@ router.delete('/auth/account', async (req, res) => {
       });
     }
 
-    const { usersStore } = await import('../services/usersStore.js');
-    const result = usersStore.deleteUser(req.user.uid);
-    res.json(result);
+    try {
+      const { usersStore } = await import('../services/usersStore.js');
+      const result = await usersStore.deleteUser(req.user.uid);
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+      res.json(result);
+    } catch (err) {
+      res.status(err.status || 500).json({
+        success: false,
+        error: err.message || 'Failed to delete account.',
+      });
+    }
   });
 });
 
@@ -277,9 +320,19 @@ router.post('/auth/delete-account', async (req, res) => {
       });
     }
 
-    const { usersStore } = await import('../services/usersStore.js');
-    const result = usersStore.deleteUser(req.user.uid);
-    res.json(result);
+    try {
+      const { usersStore } = await import('../services/usersStore.js');
+      const result = await usersStore.deleteUser(req.user.uid);
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+      res.json(result);
+    } catch (err) {
+      res.status(err.status || 500).json({
+        success: false,
+        error: err.message || 'Failed to delete account.',
+      });
+    }
   });
 });
 

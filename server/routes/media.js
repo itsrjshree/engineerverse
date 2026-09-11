@@ -1,5 +1,6 @@
 /**
- * ENGINEERVERSE — Media Pipeline Router (Cloudinary & Local Avatar Storage)
+ * ENGINEERVERSE — Media Pipeline Router (Cloudinary & Authoritative Avatar Redirection)
+ * Pure JavaScript (ZERO TypeScript).
  */
 
 import { Router } from 'express';
@@ -27,15 +28,16 @@ function generateInitialAvatarSvg(letter = 'U') {
 }
 
 router.post('/signature', standardRateLimiter, (req, res) => {
-  const { mediaType, folder } = req.body;
+  const { mediaType, folder } = req.body || {};
   const signatureData = generateUploadSignature({ folder, mediaType });
   res.json(signatureData);
 });
 
 /**
  * Serves stored user profile avatar directly with caching headers.
+ * Resolves authoritatively from Firestore/Cloudinary; falls back to dynamic SVG.
  */
-router.get('/avatar/:uid', (req, res) => {
+router.get('/avatar/:uid', async (req, res) => {
   const { uid } = req.params;
   if (!uid) {
     return res.status(400).json({ success: false, error: 'User ID is required.' });
@@ -46,50 +48,55 @@ router.get('/avatar/:uid', (req, res) => {
     return res.status(400).json({ success: false, error: 'Invalid user ID format.' });
   }
 
-  if (!fs.existsSync(AVATARS_DIR)) {
-    return res.status(404).json({ success: false, error: 'Avatar not found.' });
-  }
-
   try {
-    const files = fs.readdirSync(AVATARS_DIR);
-    const match = files.find((f) => f.startsWith(`${cleanUid}.`));
+    const user = await usersStore.getUserByUid(cleanUid);
 
-    if (!match) {
-      // Return user's first letter initial avatar SVG dynamically
-      const user = usersStore.usersById.get(cleanUid);
-      const initialChar = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
-      const svg = generateInitialAvatarSvg(initialChar);
-
-      res.setHeader('Content-Type', 'image/svg+xml');
-      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      return res.send(svg);
+    // If user has a cloud-hosted photo URL (Cloudinary or CDN), redirect authoritatively
+    if (user?.photoURL && (user.photoURL.startsWith('https://') || user.photoURL.startsWith('http://'))) {
+      return res.redirect(302, user.photoURL);
     }
 
-    const filePath = path.join(AVATARS_DIR, match);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ success: false, error: 'Avatar not found.' });
+    // Check transition disk storage if present
+    if (fs.existsSync(AVATARS_DIR)) {
+      const files = fs.readdirSync(AVATARS_DIR);
+      const match = files.find((f) => f.startsWith(`${cleanUid}.`));
+
+      if (match) {
+        const filePath = path.join(AVATARS_DIR, match);
+        if (fs.existsSync(filePath)) {
+          const ext = path.extname(match).toLowerCase();
+          const mimeMap = {
+            '.webp': 'image/webp',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+          };
+
+          res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+          res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          return fs.createReadStream(filePath).pipe(res);
+        }
+      }
     }
 
-    const ext = path.extname(match).toLowerCase();
-    const mimeMap = {
-      '.webp': 'image/webp',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-    };
+    // Dynamic initial avatar SVG fallback
+    const initialChar = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
+    const svg = generateInitialAvatarSvg(initialChar);
 
-    res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+    res.setHeader('Content-Type', 'image/svg+xml');
     res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    return fs.createReadStream(filePath).pipe(res);
+    return res.send(svg);
   } catch (err) {
     console.error('[MediaRouter] Error serving avatar:', err.message);
-    return res.status(500).json({ success: false, error: 'Failed to retrieve avatar.' });
+    const svg = generateInitialAvatarSvg('U');
+    res.setHeader('Content-Type', 'image/svg+xml');
+    return res.send(svg);
   }
 });
 
