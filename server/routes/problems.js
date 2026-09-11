@@ -9,12 +9,13 @@
  * - Submissions, support actions, and solution proposals strictly require authentication.
  * - Problem authors and administrators can edit, update, delete, and mark problems as resolved.
  * - Secure connection handshake system between problem submitters and engineers.
+ * - Authoritative persistence in Firestore.
  */
 
 import { Router } from 'express';
 import { verifyToken, requireAuth, requireVerifiedIdentity } from '../middleware/auth.js';
 import { submissionRateLimiter } from '../middleware/rateLimiter.js';
-import { problemsStore } from '../services/problemsStore.js';
+import * as firestoreProblemsService from '../services/firestoreProblemsService.js';
 
 const router = Router();
 
@@ -30,20 +31,27 @@ router.use(verifyToken);
  * List approved problems with category & search filters.
  * Returns real supporter counts, resolution status, and whether caller has supported.
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { category, search } = req.query;
   const currentUid = req.user && !req.user.isAnonymous ? req.user.uid : null;
 
-  const results = problemsStore.getAllApproved(currentUid, { category, search });
+  try {
+    const results = await firestoreProblemsService.getAllApproved(currentUid, { category, search });
 
-  res.json({
-    success: true,
-    wallName: 'The Problem Wall',
-    initiative: 'The Problem Wall',
-    tagline: 'India Still Has Problems. Engineers Still Have Work.',
-    total: results.length,
-    problems: results,
-  });
+    res.json({
+      success: true,
+      wallName: 'The Problem Wall',
+      initiative: 'The Problem Wall',
+      tagline: 'India Still Has Problems. Engineers Still Have Work.',
+      total: results.length,
+      problems: results,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({
+      success: false,
+      error: err.message || 'Failed to query problems.',
+    });
+  }
 });
 
 // ============================================================================
@@ -52,44 +60,53 @@ router.get('/', (req, res) => {
 
 /**
  * GET /api/problems/user/my-problems
- * Returns all problems created by the logged-in user, along with solution proposals received.
+ * Returns all problems created by the logged-in user.
  */
-router.get('/user/my-problems', requireAuth, (req, res) => {
-  const myProblems = problemsStore.getByAuthor(req.user.uid);
-
-  res.json({
-    success: true,
-    problems: myProblems,
-    count: myProblems.length,
-  });
+router.get('/user/my-problems', requireAuth, async (req, res) => {
+  try {
+    const myProblems = await firestoreProblemsService.getByAuthor(req.user.uid);
+    res.json({
+      success: true,
+      problems: myProblems,
+      count: myProblems.length,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
 });
 
 /**
  * GET /api/problems/user/my-supported
  * Returns all problems supported by the logged-in user.
  */
-router.get('/user/my-supported', requireAuth, (req, res) => {
-  const supported = problemsStore.getSupportedByUser(req.user.uid);
-
-  res.json({
-    success: true,
-    problems: supported,
-    count: supported.length,
-  });
+router.get('/user/my-supported', requireAuth, async (req, res) => {
+  try {
+    const supported = await firestoreProblemsService.getSupportedByUser(req.user.uid);
+    res.json({
+      success: true,
+      problems: supported,
+      count: supported.length,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
 });
 
 /**
  * GET /api/problems/user/my-solutions
  * Returns all solution proposals submitted by the logged-in user.
  */
-router.get('/user/my-solutions', requireAuth, (req, res) => {
-  const mySolutions = problemsStore.getSolutionsProposedByUser(req.user.uid);
-
-  res.json({
-    success: true,
-    solutions: mySolutions,
-    count: mySolutions.length,
-  });
+router.get('/user/my-solutions', requireAuth, async (req, res) => {
+  try {
+    const mySolutions = await firestoreProblemsService.getSolutionsProposedByUser(req.user.uid);
+    res.json({
+      success: true,
+      solutions: mySolutions,
+      count: mySolutions.length,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
 });
 
 // ============================================================================
@@ -101,7 +118,7 @@ router.get('/user/my-solutions', requireAuth, (req, res) => {
  * Strictly authenticated problem submission.
  * Zero fake numbers: starts with 0 supporters.
  */
-router.post('/', requireVerifiedIdentity, submissionRateLimiter, (req, res) => {
+router.post('/', requireVerifiedIdentity, submissionRateLimiter, async (req, res) => {
   const { title, category, description, affectedUsers, tags } = req.body;
 
   if (!title || !title.trim() || !category || !category.trim() || !description || !description.trim()) {
@@ -112,7 +129,7 @@ router.post('/', requireVerifiedIdentity, submissionRateLimiter, (req, res) => {
   }
 
   try {
-    const created = problemsStore.createProblem({
+    const result = await firestoreProblemsService.createProblem({
       title,
       category,
       description,
@@ -121,13 +138,17 @@ router.post('/', requireVerifiedIdentity, submissionRateLimiter, (req, res) => {
       user: req.user,
     });
 
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Problem submitted successfully! It is now live on The Problem Wall and in your Dashboard.',
-      problem: created,
+      problem: result.problem,
     });
   } catch (err) {
-    res.status(500).json({
+    res.status(err.status || 500).json({
       success: false,
       error: err.message || 'Failed to submit problem.',
     });
@@ -138,67 +159,80 @@ router.post('/', requireVerifiedIdentity, submissionRateLimiter, (req, res) => {
  * GET /api/problems/:id
  * Retrieve a single problem by ID.
  */
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   const currentUid = req.user && !req.user.isAnonymous ? req.user.uid : null;
-  const problem = problemsStore.getById(req.params.id, currentUid);
+  try {
+    const problem = await firestoreProblemsService.getById(req.params.id, currentUid);
 
-  if (!problem) {
-    return res.status(404).json({ success: false, error: 'Problem not found.' });
+    if (!problem) {
+      return res.status(404).json({ success: false, error: 'Problem not found.' });
+    }
+
+    res.json({ success: true, problem });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
-
-  res.json({ success: true, problem });
 });
 
 /**
  * PUT /api/problems/:id
  * Edit an existing problem. Author or Admin only.
  */
-router.put('/:id', requireAuth, (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   const { title, category, description, affectedUsers, tags } = req.body;
 
-  const result = problemsStore.updateProblem(
-    req.params.id,
-    { title, category, description, affectedUsers, tags },
-    req.user
-  );
+  try {
+    const result = await firestoreProblemsService.updateProblem(
+      req.params.id,
+      { title, category, description, affectedUsers, tags },
+      req.user
+    );
 
-  if (!result.success) {
-    const status = result.error.includes('Unauthorized') ? 403 : 404;
-    return res.status(status).json(result);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
-
-  res.json(result);
 });
 
 /**
  * DELETE /api/problems/:id
  * Delete a problem. Author or Admin only.
  */
-router.delete('/:id', requireAuth, (req, res) => {
-  const result = problemsStore.deleteProblem(req.params.id, req.user);
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const result = await firestoreProblemsService.deleteProblem(req.params.id, req.user);
 
-  if (!result.success) {
-    const status = result.error.includes('Unauthorized') ? 403 : 404;
-    return res.status(status).json(result);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
-
-  res.json(result);
 });
 
 /**
  * PATCH /api/problems/:id/resolve
  * Mark a problem as Resolved or Active. Author or Admin only.
  */
-router.patch('/:id/resolve', requireAuth, (req, res) => {
+router.patch('/:id/resolve', requireAuth, async (req, res) => {
   const { isResolved } = req.body;
-  const result = problemsStore.toggleResolveProblem(req.params.id, req.user, isResolved);
+  try {
+    const result = await firestoreProblemsService.toggleResolveProblem(req.params.id, req.user, isResolved);
 
-  if (!result.success) {
-    const status = result.error.includes('Unauthorized') ? 403 : 404;
-    return res.status(status).json(result);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
-
-  res.json(result);
 });
 
 /**
@@ -206,14 +240,18 @@ router.patch('/:id/resolve', requireAuth, (req, res) => {
  * Toggle support (upvote/remove upvote) by authenticated user.
  * Prevents double-voting and eliminates fake metrics.
  */
-router.post('/:id/support', requireAuth, (req, res) => {
-  const result = problemsStore.toggleSupport(req.params.id, req.user);
+router.post('/:id/support', requireAuth, async (req, res) => {
+  try {
+    const result = await firestoreProblemsService.toggleSupport(req.params.id, req.user);
 
-  if (!result.success) {
-    return res.status(400).json(result);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
-
-  res.json(result);
 });
 
 /**
@@ -221,7 +259,7 @@ router.post('/:id/support', requireAuth, (req, res) => {
  * Propose a solution to an existing problem and request to connect with author.
  * Strictly requires authentication and deducts 1 connection credit.
  */
-router.post('/:id/solutions', requireVerifiedIdentity, (req, res) => {
+router.post('/:id/solutions', requireVerifiedIdentity, async (req, res) => {
   const { proposedSolution, contactPitch, estimatedTimeline, portfolioUrl } = req.body;
 
   if (!proposedSolution || !proposedSolution.trim()) {
@@ -231,39 +269,46 @@ router.post('/:id/solutions', requireVerifiedIdentity, (req, res) => {
     });
   }
 
-  const result = problemsStore.proposeSolution(
-    req.params.id,
-    { proposedSolution, contactPitch, estimatedTimeline, portfolioUrl },
-    req.user
-  );
+  try {
+    const result = await firestoreProblemsService.proposeSolution(
+      req.params.id,
+      { proposedSolution, contactPitch, estimatedTimeline, portfolioUrl },
+      req.user
+    );
 
-  if (!result.success) {
-    return res.status(400).json(result);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
-
-  res.status(201).json(result);
 });
 
 /**
  * PATCH /api/problems/:id/solutions/:solutionId/connect
  * Author or Admin accepts/declines a solution connection request.
  */
-router.patch('/:id/solutions/:solutionId/connect', requireAuth, (req, res) => {
+router.patch('/:id/solutions/:solutionId/connect', requireAuth, async (req, res) => {
   const { action } = req.body; // 'connect' | 'decline'
 
-  const result = problemsStore.respondToSolution(
-    req.params.id,
-    req.params.solutionId,
-    action,
-    req.user
-  );
+  try {
+    const result = await firestoreProblemsService.respondToSolution(
+      req.params.id,
+      req.params.solutionId,
+      action,
+      req.user
+    );
 
-  if (!result.success) {
-    const status = result.error.includes('Unauthorized') ? 403 : 404;
-    return res.status(status).json(result);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
-
-  res.json(result);
 });
 
 export default router;

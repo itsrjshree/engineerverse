@@ -43,6 +43,114 @@
       },
       "required": ["uid", "email", "role", "status", "connectionCredits", "createdAt", "updatedAt"]
     },
+    "creditAccounts": {
+      "title": "creditAccounts",
+      "description": "Authoritative atomic credit balance ledger per user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "balance": { "type": "number" },
+        "isAdmin": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "balance", "updatedAt"]
+    },
+    "creditTransactions": {
+      "title": "creditTransactions",
+      "description": "Immutable ledger of all credit additions, deductions, and exemptions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string" },
+        "balanceAfter": { "type": "number" },
+        "description": { "type": "string" },
+        "referenceId": { "type": "string", "nullable": true },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "uid", "amount", "type", "balanceAfter", "createdAt"]
+    },
+    "problems": {
+      "title": "problems",
+      "description": "Authoritative engineering challenges on The Problem Wall",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "affectedUsers": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["approved", "pending", "rejected"] },
+        "isResolved": { "type": "boolean" },
+        "supportersCount": { "type": "number" },
+        "solutionsCount": { "type": "number" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorEmail": { "type": "string" },
+        "authorVerified": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "category", "description", "status", "authorUid", "createdAt"]
+    },
+    "problemSolutions": {
+      "title": "problemSolutions",
+      "description": "Solution proposals submitted by engineers to solve specific community challenges",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "problemId": { "type": "string" },
+        "solverUid": { "type": "string" },
+        "solverName": { "type": "string" },
+        "solverEmail": { "type": "string" },
+        "solverBio": { "type": "string" },
+        "solverDiscipline": { "type": "string" },
+        "portfolioUrl": { "type": "string" },
+        "proposedSolution": { "type": "string" },
+        "contactPitch": { "type": "string" },
+        "estimatedTimeline": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "connected", "declined"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "problemId", "solverUid", "proposedSolution", "status", "createdAt"]
+    },
+    "stories": {
+      "title": "stories",
+      "description": "Community engineering stories and lessons learned",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "author": { "type": "string" },
+        "discipline": { "type": "string" },
+        "quote": { "type": "string" },
+        "status": { "type": "string", "enum": ["approved", "pending", "rejected"] },
+        "featured": { "type": "boolean" },
+        "upvotes": { "type": "number" },
+        "authorUid": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "discipline", "quote", "status", "createdAt"]
+    },
+    "pledges": {
+      "title": "pledges",
+      "description": "Engineering pledges connecting Sir MV's legacy with modern builders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "commitment": { "type": "string" },
+        "certificateId": { "type": "string" },
+        "signedAt": { "type": "string" },
+        "signerUid": { "type": "string", "nullable": true },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "commitment", "certificateId", "signedAt"]
+    },
     "auditLogs": {
       "title": "auditLogs",
       "description": "Administrative and security audit trails",

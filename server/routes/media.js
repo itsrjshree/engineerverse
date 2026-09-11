@@ -1,17 +1,18 @@
 /**
  * ENGINEERVERSE — Media Pipeline Router (Cloudinary & Authoritative Avatar Redirection)
  * Pure JavaScript (ZERO TypeScript).
+ *
+ * All binary media is stored authoritatively in Cloudinary.
+ * Avatars are served by redirecting to the authoritative Cloudinary URL
+ * or serving a deterministic SVG fallback. No local disk storage.
  */
 
 import { Router } from 'express';
-import fs from 'fs';
-import path from 'path';
 import { standardRateLimiter } from '../middleware/rateLimiter.js';
 import { generateUploadSignature } from '../services/cloudinaryService.js';
 import { usersStore } from '../services/usersStore.js';
 
 const router = Router();
-const AVATARS_DIR = path.resolve(process.cwd(), 'server/storage/avatars');
 
 function generateInitialAvatarSvg(letter = 'U') {
   const char = String(letter).charAt(0).toUpperCase() || 'U';
@@ -36,6 +37,7 @@ router.post('/signature', standardRateLimiter, (req, res) => {
 /**
  * Serves stored user profile avatar directly with caching headers.
  * Resolves authoritatively from Firestore/Cloudinary; falls back to dynamic SVG.
+ * Zero local disk storage dependencies.
  */
 router.get('/avatar/:uid', async (req, res) => {
   const { uid } = req.params;
@@ -51,39 +53,12 @@ router.get('/avatar/:uid', async (req, res) => {
   try {
     const user = await usersStore.getUserByUid(cleanUid);
 
-    // If user has a cloud-hosted photo URL (Cloudinary or CDN), redirect authoritatively
+    // If user has an authoritative cloud-hosted photo URL (Cloudinary or CDN), redirect directly
     if (user?.photoURL && (user.photoURL.startsWith('https://') || user.photoURL.startsWith('http://'))) {
       return res.redirect(302, user.photoURL);
     }
 
-    // Check transition disk storage if present
-    if (fs.existsSync(AVATARS_DIR)) {
-      const files = fs.readdirSync(AVATARS_DIR);
-      const match = files.find((f) => f.startsWith(`${cleanUid}.`));
-
-      if (match) {
-        const filePath = path.join(AVATARS_DIR, match);
-        if (fs.existsSync(filePath)) {
-          const ext = path.extname(match).toLowerCase();
-          const mimeMap = {
-            '.webp': 'image/webp',
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.gif': 'image/gif',
-            '.svg': 'image/svg+xml',
-          };
-
-          res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
-          res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-          return fs.createReadStream(filePath).pipe(res);
-        }
-      }
-    }
-
-    // Dynamic initial avatar SVG fallback
+    // Dynamic initial avatar SVG fallback (zero disk dependence)
     const initialChar = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
     const svg = generateInitialAvatarSvg(initialChar);
 

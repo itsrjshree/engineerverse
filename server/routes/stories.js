@@ -1,81 +1,87 @@
 /**
  * ENGINEERVERSE — Engineer Stories Wall Router
  * Prompt: "What did engineering teach you?"
+ * Pure JavaScript (ZERO TypeScript).
+ *
+ * Backed authoritatively by Firestore `stories` collection.
  */
 
 import { Router } from 'express';
+import { verifyToken, requireVerifiedIdentity, requireAuth } from '../middleware/auth.js';
 import { submissionRateLimiter } from '../middleware/rateLimiter.js';
+import * as firestoreStoriesService from '../services/firestoreStoriesService.js';
 
 const router = Router();
 
-const initialStories = [
-  {
-    id: 'story_01',
-    author: 'Ananya S.',
-    discipline: 'Embedded Systems',
-    quote: 'Engineering taught me that the multimeter never lies. When code and physics disagree, physics always wins.',
-    status: 'approved',
-    featured: true,
-    year: '2026',
-  },
-  {
-    id: 'story_02',
-    author: 'Vikram R.',
-    discipline: 'Civil Engineering',
-    quote: 'It taught me that a bridge doesn\'t just carry trucks; it carries the trust of a million people who will never know your name.',
-    status: 'approved',
-    featured: true,
-    year: '2026',
-  },
-  {
-    id: 'story_03',
-    author: 'Karthik N.',
-    discipline: 'Distributed Systems',
-    quote: 'Failure is not an insult; it is telemetry. Once you stop taking bugs personally, you can fix anything.',
-    status: 'approved',
-    featured: false,
-    year: '2026',
-  },
-];
+router.use(verifyToken);
 
-let storiesStore = [...initialStories];
-
-router.get('/', (req, res) => {
-  const approved = storiesStore.filter((s) => s.status === 'approved');
-  res.json({
-    success: true,
-    stories: approved,
-  });
+/**
+ * GET /api/stories
+ * Returns all approved community stories from Firestore.
+ */
+router.get('/', async (req, res) => {
+  const currentUid = req.user && !req.user.isAnonymous ? req.user.uid : null;
+  try {
+    const approved = await firestoreStoriesService.getAllApproved(currentUid);
+    res.json({
+      success: true,
+      stories: approved,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
 });
 
-router.post('/', submissionRateLimiter, (req, res) => {
+/**
+ * POST /api/stories
+ * Authenticated submission of engineering story to Firestore.
+ */
+router.post('/', requireVerifiedIdentity, submissionRateLimiter, async (req, res) => {
   const { author, discipline, quote } = req.body;
 
-  if (!author || !discipline || !quote) {
+  if (!discipline || !quote) {
     return res.status(400).json({
       success: false,
-      error: 'Author, discipline, and quote are required.',
+      error: 'Discipline and story quote are required.',
     });
   }
 
-  const newStory = {
-    id: 'story_' + Math.random().toString(36).substring(2, 9),
-    author: author.trim(),
-    discipline: discipline.trim(),
-    quote: quote.trim(),
-    status: 'pending',
-    featured: false,
-    year: String(new Date().getFullYear()),
-    createdAt: new Date().toISOString(),
-  };
+  try {
+    const result = await firestoreStoriesService.submitStory({
+      author,
+      discipline,
+      quote,
+      user: req.user,
+    });
 
-  storiesStore.unshift(newStory);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
 
-  res.status(201).json({
-    success: true,
-    message: 'Your story has been submitted for moderation review.',
-    story: newStory,
-  });
+    res.status(201).json({
+      success: true,
+      message: 'Your story has been recorded in the community archive.',
+      story: result.story,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/stories/:id/upvote
+ * Upvote a story in Firestore (deterministic 1-per-user).
+ */
+router.patch('/:id/upvote', requireAuth, async (req, res) => {
+  try {
+    const result = await firestoreStoriesService.toggleUpvote(req.params.id, req.user);
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
 });
 
 export default router;

@@ -311,13 +311,13 @@ export const authService = {
         uid: u.uid,
         email,
         displayName: u.displayName || cached.displayName || (email ? email.split('@')[0] : 'Community Member'),
-        photoURL: u.photoURL || cached.photoURL || (typeof window !== 'undefined' ? (localStorage.getItem(`ev_user_photo_${u.uid || email}`) || null) : null),
+        photoURL: u.photoURL || cached.photoURL || null,
         isAnonymous: false,
         isAdmin,
-        role: isAdmin ? 'admin' : 'member',
+        role: isAdmin ? 'admin' : (cached.role || 'member'),
         connectionCredits: cached.connectionCredits ?? 5,
-        bio: cached.bio || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_bio_${u.uid || email}`) || '' : ''),
-        discipline: cached.discipline || (typeof window !== 'undefined' ? localStorage.getItem(`ev_user_discipline_${u.uid || email}`) || 'Full Stack Systems' : 'Full Stack Systems'),
+        bio: cached.bio || '',
+        discipline: cached.discipline || 'Full Stack Systems',
         portfolioUrl: cached.portfolioUrl || '',
       };
     }
@@ -406,15 +406,9 @@ export const authService = {
     if (typeof window !== 'undefined') {
       localStorage.setItem('engineerverse_authenticated_user_v1', JSON.stringify(mergedUser));
       const uidKey = mergedUser.uid || mergedUser.email;
-      if (bio !== undefined) localStorage.setItem(`ev_user_bio_${uidKey}`, bio);
-      if (discipline !== undefined) localStorage.setItem(`ev_user_discipline_${uidKey}`, discipline);
-      if (resolvedPhotoURL !== undefined) {
-        if (resolvedPhotoURL) {
-          localStorage.setItem(`ev_user_photo_${uidKey}`, resolvedPhotoURL);
-        } else {
-          localStorage.removeItem(`ev_user_photo_${uidKey}`);
-        }
-      }
+      localStorage.removeItem(`ev_user_bio_${uidKey}`);
+      localStorage.removeItem(`ev_user_discipline_${uidKey}`);
+      localStorage.removeItem(`ev_user_photo_${uidKey}`);
     }
 
     // 4. Real-time broadcast to all subscribers
@@ -754,46 +748,13 @@ export const authService = {
   },
 
   /**
-   * Standard Email & Password Sign Up (Account Creation)
+   * Standard Email & Password Sign Up (Restricted in V0 to enforce verified Google OAuth)
    */
-  async signUpWithEmail(email, password, displayName = '') {
-    await ensureInitialized();
-
-    if (isFirebaseConfigured && firebaseAuth) {
-      try {
-        const result = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
-        const user = result.user;
-        if (displayName && displayName.trim()) {
-          await updateProfile(user, { displayName: displayName.trim() }).catch(() => {});
-        }
-        const idToken = await user.getIdToken().catch(() => null);
-        const userProfile = this._formatUserProfile(user);
-        if (displayName && displayName.trim()) {
-          userProfile.displayName = displayName.trim();
-        }
-        if (idToken) {
-          await this._setLocalAuthenticatedSession(idToken).catch(() => {});
-        }
-
-        dispatchAuthState(userProfile);
-        return {
-          success: true,
-          user: userProfile,
-          idToken,
-        };
-      } catch (err) {
-        return {
-          success: false,
-          error: this._mapAuthError(err, 'Email Registration'),
-          code: err.code,
-        };
-      }
-    }
-
+  async signUpWithEmail() {
     return {
       success: false,
-      error: 'Firebase Authentication is not configured on this deployment. Account registration requires Firebase client configuration.',
-      code: 'auth/not-configured',
+      error: 'To guarantee authentic community identity and prevent unverified accounts, new V0 registration requires Google Authentication. Please use Continue with Google.',
+      code: 'auth/registration-restricted',
     };
   },
 

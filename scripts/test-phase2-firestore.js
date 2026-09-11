@@ -23,11 +23,36 @@ process.env.ADMIN_FIREBASE_UID = 'admin_sole_rajshree';
 const firestoreService = await import('../server/services/firestoreService.js');
 const { usersStore } = await import('../server/services/usersStore.js');
 const { AUTHORIZED_ADMIN_EMAIL, getAuthorizedAdminUid } = await import('../server/middleware/auth.js');
+const creditsService = await import('../server/services/firestoreCreditsService.js');
+const problemsService = await import('../server/services/firestoreProblemsService.js');
+const storiesService = await import('../server/services/firestoreStoriesService.js');
+const pledgesService = await import('../server/services/firestorePledgesService.js');
 
 class MockFirestoreDatabase {
   constructor() {
     this.collections = new Map();
     this.failNextWrite = false;
+  }
+
+  doc(fullPath) {
+    const parts = fullPath.split('/');
+    if (parts.length >= 2) {
+      const colName = parts.slice(0, parts.length - 1).join('/');
+      const docId = parts[parts.length - 1];
+      return this.collection(colName).doc(docId);
+    }
+    return this.collection(fullPath).doc('default');
+  }
+
+  async runTransaction(updateFunction) {
+    const self = this;
+    const transaction = {
+      get: async (docRef) => docRef.get(),
+      set: (docRef, data) => docRef.set(data),
+      update: (docRef, updates) => docRef.update(updates),
+      delete: (docRef) => docRef.delete(),
+    };
+    return updateFunction(transaction);
   }
 
   collection(name) {
@@ -39,11 +64,17 @@ class MockFirestoreDatabase {
 
     return {
       doc(id) {
+        const docId = id || `mock_doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
         return {
+          id: docId,
+          collection(subName) {
+            return self.collection(`${name}/${docId}/${subName}`);
+          },
           async get() {
-            const data = store.get(id);
+            const data = store.get(docId);
             return {
               exists: Boolean(data),
+              id: docId,
               data: () => (data ? { ...data } : null),
             };
           },
@@ -55,7 +86,7 @@ class MockFirestoreDatabase {
               err.status = 503;
               throw err;
             }
-            store.set(id, { ...data });
+            store.set(docId, { id: docId, ...data });
           },
           async update(updates) {
             if (self.failNextWrite) {
@@ -65,40 +96,61 @@ class MockFirestoreDatabase {
               err.status = 503;
               throw err;
             }
-            const current = store.get(id);
+            const current = store.get(docId);
             if (!current) {
               const err = new Error('Document not found');
               err.status = 404;
               throw err;
             }
-            store.set(id, { ...current, ...updates });
+            const processedUpdates = { ...updates };
+            for (const [key, val] of Object.entries(updates)) {
+              if (val && typeof val === 'object' && val.constructor && val.constructor.name.includes('Increment')) {
+                const incAmount = val.operand ?? 1;
+                processedUpdates[key] = (current[key] || 0) + incAmount;
+              }
+            }
+            store.set(docId, { ...current, ...processedUpdates });
           },
           async delete() {
-            store.delete(id);
+            store.delete(docId);
           },
         };
       },
+      async add(data) {
+        const docRef = this.doc();
+        await docRef.set(data);
+        return docRef;
+      },
       where(field, op, val) {
+        const getDocs = async (limitNum = Infinity) => {
+          const results = [];
+          for (const [id, item] of store.entries()) {
+            if (item[field] === val) {
+              results.push({
+                id,
+                data: () => ({ ...item }),
+              });
+              if (results.length >= limitNum) break;
+            }
+          }
+          return {
+            empty: results.length === 0,
+            docs: results,
+          };
+        };
         return {
+          get: () => getDocs(Infinity),
           limit(num) {
             return {
-              async get() {
-                const results = [];
-                for (const [id, item] of store.entries()) {
-                  if (item[field] === val) {
-                    results.push({
-                      id,
-                      data: () => ({ ...item }),
-                    });
-                    if (results.length >= num) break;
-                  }
-                }
-                return {
-                  empty: results.length === 0,
-                  docs: results,
-                };
-              },
+              get: () => getDocs(num),
             };
+          },
+        };
+      },
+      orderBy(field, dir = 'asc') {
+        return {
+          async get() {
+            return self.collection(name).get();
           },
         };
       },
@@ -111,6 +163,7 @@ class MockFirestoreDatabase {
           });
         }
         return {
+          empty: results.length === 0,
           docs: results,
         };
       },
@@ -322,8 +375,116 @@ async function runPhase2Tests() {
       firestoreService.setTestFirestoreRepository(mockDb);
     }
 
+    // ------------------------------------------------------------------------
+    // TEST 9: Atomic Credits Ledger & Zero-Overdraft Guarantee
+    // ------------------------------------------------------------------------
+    console.log('\n[TEST 9] Atomic Credits Ledger & Zero-Overdraft Enforcement...');
+    const creditUser = 'engineer_credit_test';
+    await firestoreService.getOrCreateUser({
+      uid: creditUser,
+      email: 'credit.test@example.com',
+      emailVerified: true,
+    });
+    const initBalance = await creditsService.getCreditBalance(creditUser);
+    assert.strictEqual(initBalance, 5, 'New user must default to 5 connection credits');
+
+    const deductResult = await creditsService.deductCredit({
+      uid: creditUser,
+      reason: 'Solution proposal',
+      referenceId: 'prob_123',
+    });
+    assert.strictEqual(deductResult.success, true, 'Credit deduction must succeed');
+    assert.strictEqual(deductResult.remainingCredits, 4, 'Balance must be 4 after 1 credit deduction');
+
+    // Deduct remaining 4 credits
+    for (let i = 0; i < 4; i++) {
+      await creditsService.deductCredit({ uid: creditUser, reason: 'Followup action' });
+    }
+    const zeroBalance = await creditsService.getCreditBalance(creditUser);
+    assert.strictEqual(zeroBalance, 0, 'Balance must reach 0');
+
+    // Overdraft attempt must fail safely
+    const overdraftRes = await creditsService.deductCredit({ uid: creditUser, reason: 'Overdraft attempt' });
+    assert.strictEqual(overdraftRes.success, false, 'Overdraft attempt must be refused');
+    assert.strictEqual(overdraftRes.remainingCredits, 0, 'Remaining credits must stay 0');
+    console.log('   ✓ Atomic credit ledger prevents overdraft and logs transactions');
+
+    // ------------------------------------------------------------------------
+    // TEST 10: Problems Wall Authoritative CRUD & Solution Proposals
+    // ------------------------------------------------------------------------
+    console.log('\n[TEST 10] Problems Wall Authoritative CRUD & Solutions...');
+    const memberUser = { uid: memberUid, name: 'Alex Builder', email: 'alex@example.com' };
+    const createProbResult = await problemsService.createProblem({
+      title: 'Decentralized Water Purification Unit',
+      category: 'clean_water',
+      description: 'Designing low-power UV filtration for rural communities.',
+      affectedUsers: '500 families',
+      tags: ['water', 'iot', 'hardware'],
+      user: memberUser,
+    });
+
+    assert.strictEqual(createProbResult.success, true, 'Problem creation must succeed');
+    const problemId = createProbResult.problem.id;
+    assert.ok(problemId, 'Problem must receive persistent ID');
+    assert.strictEqual(createProbResult.problem.authorId, memberUid, 'Author UID must match');
+
+    // Support problem
+    const supporter = { uid: 'supporter_uid_42', name: 'Supporter User' };
+    const supportRes = await problemsService.toggleSupport(problemId, supporter);
+    assert.strictEqual(supportRes.success, true, 'Support action must succeed');
+    assert.strictEqual(supportRes.isSupported, true, 'Support must be toggled on');
+    assert.strictEqual(supportRes.supporterCount, 1, 'Supporters count must equal 1');
+
+    // Resolve problem by author
+    const resolveRes = await problemsService.toggleResolveProblem(problemId, memberUser, true);
+    assert.strictEqual(resolveRes.success, true, 'Resolve action must succeed');
+    assert.strictEqual(resolveRes.isResolved, true, 'Author must be able to resolve problem');
+    console.log('   ✓ Problems Wall CRUD, deterministic supports, and resolution work authoritatively');
+
+    // ------------------------------------------------------------------------
+    // TEST 11: Community Stories & Deterministic Upvotes
+    // ------------------------------------------------------------------------
+    console.log('\n[TEST 11] Community Stories & Deterministic Upvoting...');
+    const storySubmitRes = await storiesService.submitStory({
+      author: 'Maya Lin',
+      discipline: 'Structural Engineering',
+      quote: 'Engineers solve constraints that nature leaves unaddressed.',
+      user: memberUser,
+    });
+
+    assert.strictEqual(storySubmitRes.success, true, 'Story submission must succeed');
+    const storyId = storySubmitRes.story.id;
+    assert.ok(storyId, 'Story must receive persistent ID');
+
+    const voter = { uid: 'voter_uid_101', name: 'Voter User' };
+    const upvoteRes = await storiesService.toggleUpvote(storyId, voter);
+    assert.strictEqual(upvoteRes.success, true, 'Upvote must succeed');
+    assert.strictEqual(upvoteRes.hasUpvoted, true, 'Story must be registered as upvoted');
+    assert.strictEqual(upvoteRes.upvotes, 1, 'Upvotes count must be 1');
+    console.log('   ✓ Community Stories and deterministic upvotes persist without state loss');
+
+    // ------------------------------------------------------------------------
+    // TEST 12: Engineering Pledges & Certificate Generation
+    // ------------------------------------------------------------------------
+    console.log('\n[TEST 12] Engineering Pledges & Certificate Counter Persistence...');
+    const pledgeRes = await pledgesService.createPledge({
+      name: 'Rohan Deshmukh',
+      role: 'Robotics Engineer',
+      commitment: 'To uphold rigorous ethics and safety in autonomous systems.',
+      user: memberUser,
+    });
+
+    assert.strictEqual(pledgeRes.success, true, 'Pledge creation must succeed');
+    assert.ok(pledgeRes.pledge.id, 'Pledge must receive persistent ID');
+    assert.ok(pledgeRes.pledge.certificateId.startsWith('EV-'), 'Certificate must have EV- prefix');
+
+    const stats = await pledgesService.getPledgeStats();
+    assert.strictEqual(stats.success, true, 'Pledge stats query must succeed');
+    assert.ok(stats.totalPledgesCount >= 1, 'Pledges count must be tracked');
+    console.log('   ✓ Pledges persist with authoritative certificate numbering');
+
     console.log('\n===========================================================================');
-    console.log('✓ ALL 8 PHASE 2 FIRESTORE SOURCE OF TRUTH VERIFICATIONS PASSED CLEANLY');
+    console.log('✓ ALL 12 PHASE 2 FIRESTORE SOURCE OF TRUTH VERIFICATIONS PASSED CLEANLY');
     console.log('===========================================================================\n');
   } finally {
     firestoreService.clearTestFirestoreRepository();

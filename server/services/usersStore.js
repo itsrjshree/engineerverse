@@ -365,6 +365,17 @@ class UsersStore {
     return result;
   }
 
+  async deleteUser(uid) {
+    if (!uid) return { success: false, error: 'User ID is required.' };
+    const result = await firestoreService.deleteUser(uid);
+    if (result.success) {
+      const u = this.usersById.get(uid);
+      if (u?.email) this.emailToUid.delete(u.email);
+      this.usersById.delete(uid);
+    }
+    return result;
+  }
+
   async getAuditLogs(limitCount = 100) {
     if (process.env.NODE_ENV === 'production') {
       return firestoreService.getAuditLogs(limitCount);

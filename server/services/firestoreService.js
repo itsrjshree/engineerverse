@@ -622,6 +622,14 @@ export async function deleteUser(uid) {
     await deleteImageFromCloudinary(existingUser.photoMetadata.publicId).catch(() => {});
   }
 
+  // 1.5 Purge user problems, solutions, supports, and credit records
+  try {
+    const { purgeUserData } = await import('./firestoreProblemsService.js');
+    await purgeUserData(uid);
+  } catch (purgeErr) {
+    console.warn(`[FirestoreService] Notice during purge of user ${uid} artifacts:`, purgeErr.message);
+  }
+
   // 2. Delete document from Firestore
   try {
     await db.collection('users').doc(uid).delete();

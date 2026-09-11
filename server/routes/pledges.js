@@ -2,28 +2,39 @@
  * ENGINEERVERSE — Engineering Pledge Router
  * "My Engineering Pledge"
  * Connects Sir M. Visvesvaraya's legacy to today's builder.
+ * Pure JavaScript (ZERO TypeScript).
+ *
+ * Backed authoritatively by Firestore `pledges` collection & atomic counter.
  */
 
 import { Router } from 'express';
+import { verifyToken } from '../middleware/auth.js';
 import { standardRateLimiter } from '../middleware/rateLimiter.js';
+import * as firestorePledgesService from '../services/firestorePledgesService.js';
 
 const router = Router();
 
-// In-memory store for pledges with genuine dynamic counts
-const pledgesStore = [];
+router.use(verifyToken);
 
-router.get('/stats', (req, res) => {
-  const currentYear = String(new Date().getFullYear());
-  res.json({
-    success: true,
-    totalPledgesCount: pledgesStore.length,
-    campaignYear: currentYear,
-  });
+/**
+ * GET /api/pledges/stats
+ * Real aggregate pledge count from Firestore
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await firestorePledgesService.getPledgeStats();
+    res.json(stats);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
 });
 
-router.post('/', standardRateLimiter, (req, res) => {
+/**
+ * POST /api/pledges
+ * Signs the engineering pledge and generates an immutable certificate
+ */
+router.post('/', standardRateLimiter, async (req, res) => {
   const { name, commitment, role } = req.body;
-  const currentYear = new Date().getFullYear();
 
   if (!name || !commitment) {
     return res.status(400).json({
@@ -32,25 +43,22 @@ router.post('/', standardRateLimiter, (req, res) => {
     });
   }
 
-  const newPledgeCount = pledgesStore.length + 1;
+  try {
+    const result = await firestorePledgesService.createPledge({
+      name,
+      commitment,
+      role,
+      user: req.user && !req.user.isAnonymous ? req.user : null,
+    });
 
-  const pledgeRecord = {
-    id: 'pledge_' + Math.random().toString(36).substring(2, 9),
-    name: name.trim(),
-    role: role?.trim() || 'Engineer',
-    commitment: commitment.trim(),
-    signedAt: new Date().toISOString(),
-    certificateId: `EV-${currentYear}-PLG-${newPledgeCount}`,
-  };
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
 
-  pledgesStore.push(pledgeRecord);
-
-  res.status(201).json({
-    success: true,
-    message: 'Engineering Pledge recorded successfully.',
-    pledge: pledgeRecord,
-    totalPledgesCount: pledgesStore.length,
-  });
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
 });
 
 export default router;

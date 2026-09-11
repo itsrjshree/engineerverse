@@ -37,29 +37,37 @@ router.get('/verify-session', requireAdmin, (req, res) => {
 
 // Admin Telemetry & Overview
 router.get('/overview', requireAdmin, async (req, res) => {
-  const metrics = analyticsStore.getMetrics();
-  const allProblems = problemsStore.getAllForAdmin();
-  const allUsers = await usersStore.getAllUsers();
+  try {
+    const metrics = analyticsStore.getMetrics();
+    const allProblems = (await problemsStore.getAllForAdmin()) || [];
+    const allUsers = (await usersStore.getAllUsers()) || [];
 
-  res.json({
-    success: true,
-    systemMetrics: {
-      totalVisitorsEstimate: metrics.landingViews, // Real visitor landing counts (zero fabrication)
-      dnaCompletions: metrics.dnaCompletions,
-      cardsGenerated: metrics.cardsGenerated,
-      sharesTriggered: metrics.sharesTriggered,
-      totalProblems: allProblems.length,
-      problemsResolved: allProblems.filter((p) => p.isResolved).length,
-      problemsApproved: allProblems.filter((p) => p.status === 'approved').length,
-      totalUsers: allUsers.length,
-      suspendedUsersCount: allUsers.filter((u) => u.status === 'suspended').length,
-      warnedUsersCount: allUsers.filter((u) => u.status === 'warned').length,
-      storiesApproved: metrics.storiesSubmitted,
-      aiTokensConsumed: 0,
-      aiCircuitBreakerStatus: 'nominal',
-      serverUptime: Math.floor(process.uptime()),
-    },
-  });
+    res.json({
+      success: true,
+      systemMetrics: {
+        totalVisitorsEstimate: metrics.landingViews, // Real visitor landing counts (zero fabrication)
+        dnaCompletions: metrics.dnaCompletions,
+        cardsGenerated: metrics.cardsGenerated,
+        sharesTriggered: metrics.sharesTriggered,
+        totalProblems: allProblems.length,
+        problemsResolved: allProblems.filter((p) => p.isResolved).length,
+        problemsApproved: allProblems.filter((p) => p.status === 'approved').length,
+        totalUsers: allUsers.length,
+        suspendedUsersCount: allUsers.filter((u) => u.status === 'suspended').length,
+        warnedUsersCount: allUsers.filter((u) => u.status === 'warned').length,
+        storiesApproved: metrics.storiesSubmitted,
+        aiTokensConsumed: 0,
+        aiCircuitBreakerStatus: 'nominal',
+        serverUptime: Math.floor(process.uptime()),
+      },
+    });
+  } catch (err) {
+    console.error('[AdminRouter] Error in overview endpoint:', err.message);
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({ success: false, error: 'Database service unavailable.' });
+    }
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ============================================================================
@@ -67,8 +75,8 @@ router.get('/overview', requireAdmin, async (req, res) => {
 // ============================================================================
 
 // GET all problems with complete author details & solutions
-router.get('/problems', requireAdmin, (req, res) => {
-  const problems = problemsStore.getAllForAdmin();
+router.get('/problems', requireAdmin, async (req, res) => {
+  const problems = await problemsStore.getAllForAdmin();
   res.json({
     success: true,
     total: problems.length,
@@ -77,9 +85,9 @@ router.get('/problems', requireAdmin, (req, res) => {
 });
 
 // Admin update any problem
-router.put('/problems/:id', requireAdmin, (req, res) => {
+router.put('/problems/:id', requireAdmin, async (req, res) => {
   const { title, category, description, affectedUsers, tags } = req.body;
-  const result = problemsStore.updateProblem(
+  const result = await problemsStore.updateProblem(
     req.params.id,
     { title, category, description, affectedUsers, tags },
     req.user
@@ -89,7 +97,7 @@ router.put('/problems/:id', requireAdmin, (req, res) => {
     return res.status(404).json(result);
   }
 
-  usersStore.logAudit({
+  await usersStore.logAudit({
     action: 'ADMIN_UPDATE_PROBLEM',
     problemId: req.params.id,
     moderatorId: req.user.uid,
@@ -100,14 +108,14 @@ router.put('/problems/:id', requireAdmin, (req, res) => {
 });
 
 // Admin delete any problem
-router.delete('/problems/:id', requireAdmin, (req, res) => {
-  const result = problemsStore.deleteProblem(req.params.id, req.user);
+router.delete('/problems/:id', requireAdmin, async (req, res) => {
+  const result = await problemsStore.deleteProblem(req.params.id, req.user);
 
   if (!result.success) {
     return res.status(404).json(result);
   }
 
-  usersStore.logAudit({
+  await usersStore.logAudit({
     action: 'ADMIN_DELETE_PROBLEM',
     problemId: req.params.id,
     moderatorId: req.user.uid,
@@ -118,15 +126,15 @@ router.delete('/problems/:id', requireAdmin, (req, res) => {
 });
 
 // Admin change status or toggle resolved
-router.patch('/problems/:id/status', requireAdmin, (req, res) => {
+router.patch('/problems/:id/status', requireAdmin, async (req, res) => {
   const { status, isResolved } = req.body;
-  const result = problemsStore.adminSetStatus(req.params.id, status, isResolved);
+  const result = await problemsStore.adminSetStatus(req.params.id, status, isResolved);
 
   if (!result.success) {
     return res.status(404).json(result);
   }
 
-  usersStore.logAudit({
+  await usersStore.logAudit({
     action: 'ADMIN_STATUS_CHANGE',
     problemId: req.params.id,
     newStatus: status,
