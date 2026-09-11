@@ -84,6 +84,7 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
   const fileInputRef = useRef(null);
   const [photoUploadMode, setPhotoUploadMode] = useState('file'); // 'file' | 'url'
   const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
   // Client-side image optimization: converts local files into fast-loading WebP/JPEG data URLs
@@ -105,10 +106,10 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         try {
           const canvas = document.createElement('canvas');
-          const MAX_DIM = 320;
+          const MAX_DIM = 400;
           let width = img.width;
           let height = img.height;
 
@@ -137,13 +138,33 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
           }
 
           setPhotoURL(dataUrl);
-          setSuccessToast('Photo uploaded & previewed! Click "Save Changes" to apply across ENGINEERVERSE.');
-          setTimeout(() => setSuccessToast(''), 4500);
+          setIsProcessingImage(false);
+
+          // Immediate auto-upload to Cloudinary -> Firestore pipeline
+          setIsUploadingPhoto(true);
+          setSuccessToast('Uploading avatar to Cloudinary & saving to database...');
+
+          const uploadResult = await authService.uploadAvatar(dataUrl);
+          if (uploadResult && uploadResult.success) {
+            if (uploadResult.photoURL) {
+              setPhotoURL(uploadResult.photoURL);
+            }
+            if (uploadResult.user) {
+              setUser(uploadResult.user);
+            }
+            setSuccessToast('Avatar uploaded to Cloudinary & synced to database successfully!');
+            setTimeout(() => setSuccessToast(''), 4500);
+          } else {
+            // Still kept preview locally so user can save with overall profile
+            setSuccessToast('Photo preview ready. Click "Save Changes" below to apply.');
+            setTimeout(() => setSuccessToast(''), 4000);
+          }
         } catch (err) {
           console.warn('[Profile] Canvas processing error:', err);
           setPhotoURL(event.target.result);
         } finally {
           setIsProcessingImage(false);
+          setIsUploadingPhoto(false);
         }
       };
       img.onerror = () => {
@@ -224,24 +245,32 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
     setPhotoError(false);
   }, [photoURL]);
 
-  // Sync state from active user
+  // Sync state from active user (stabilized by UID/email to eliminate loop and database churning)
   useEffect(() => {
-    async function loadProfile() {
-      const refreshed = await authService.refreshCurrentUser();
-      const active = refreshed || propUser || (await authService.getCurrentUser());
-      if (active) {
-        setUser(active);
-        setDisplayName(active.displayName || active.email?.split('@')[0] || 'Engineer');
-        setBio(active.bio || '');
-        setDiscipline(active.discipline || 'Full Stack Systems');
-        setPortfolioUrl(active.portfolioUrl || '');
-        setPhotoURL(active.photoURL || '');
-        const savedTheme = localStorage.getItem(`ev_user_avatar_theme_${active.uid || active.email}`);
-        if (savedTheme) setAvatarTheme(savedTheme);
-      }
+    if (propUser) {
+      setUser(propUser);
+      setDisplayName(propUser.displayName || propUser.email?.split('@')[0] || 'Engineer');
+      setBio(propUser.bio || '');
+      setDiscipline(propUser.discipline || 'Full Stack Systems');
+      setPortfolioUrl(propUser.portfolioUrl || '');
+      setPhotoURL(propUser.photoURL || '');
+      const savedTheme = localStorage.getItem(`ev_user_avatar_theme_${propUser.uid || propUser.email}`);
+      if (savedTheme) setAvatarTheme(savedTheme);
+    } else {
+      authService.getCurrentUser().then((active) => {
+        if (active) {
+          setUser(active);
+          setDisplayName(active.displayName || active.email?.split('@')[0] || 'Engineer');
+          setBio(active.bio || '');
+          setDiscipline(active.discipline || 'Full Stack Systems');
+          setPortfolioUrl(active.portfolioUrl || '');
+          setPhotoURL(active.photoURL || '');
+          const savedTheme = localStorage.getItem(`ev_user_avatar_theme_${active.uid || active.email}`);
+          if (savedTheme) setAvatarTheme(savedTheme);
+        }
+      });
     }
-    loadProfile();
-  }, [propUser]);
+  }, [propUser?.uid, propUser?.email]);
 
   const isAdmin = Boolean(
     user?.email && user.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()
@@ -670,6 +699,16 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
                               Optimizing & formatting image...
                             </span>
                           </div>
+                        ) : isUploadingPhoto ? (
+                          <div className="flex flex-col items-center gap-2 py-3">
+                            <Loader2 className="w-7 h-7 text-emerald-400 animate-spin" />
+                            <span className="text-xs font-semibold text-emerald-200">
+                              Uploading to Cloudinary & syncing to Firestore...
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              Executing SHA-256 deduplication & ACID commit
+                            </span>
+                          </div>
                         ) : (
                           <>
                             <div className="w-10 h-10 rounded-xl bg-purple-900/30 border border-purple-800/40 flex items-center justify-center text-purple-400 group-hover:text-purple-300 group-hover:scale-110 transition">
@@ -680,7 +719,7 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
                                 Click to choose photo or drag & drop here
                               </p>
                               <p className="text-[11px] text-slate-400 mt-0.5">
-                                PNG, JPG, WEBP up to 10MB • Auto-optimized for high performance
+                                PNG, JPG, WEBP up to 10MB • Auto-upload to Cloudinary & Firestore
                               </p>
                             </div>
                           </>

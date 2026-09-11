@@ -185,7 +185,7 @@ export async function verifyToken(req, res, next) {
       };
 
       const { usersStore } = await import('../services/usersStore.js');
-      const storeUser = usersStore.getOrCreateUser(userObj);
+      const storeUser = await usersStore.getOrCreateUser(userObj);
 
       if (storeUser && (storeUser.status === 'suspended' || storeUser.status === 'blocked')) {
         return res.status(403).json({
@@ -240,7 +240,7 @@ export async function verifyToken(req, res, next) {
       };
 
       const { usersStore } = await import('../services/usersStore.js');
-      const storeUser = usersStore.getOrCreateUser(userObj);
+      const storeUser = await usersStore.getOrCreateUser(userObj);
 
       if (storeUser && (storeUser.status === 'suspended' || storeUser.status === 'blocked')) {
         return res.status(403).json({

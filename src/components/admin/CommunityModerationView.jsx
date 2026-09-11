@@ -31,6 +31,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { apiFetch } from '../../config/api.js';
+import { authService } from '../../services/firebaseClient.js';
 
 export function CommunityModerationView() {
   const [activeSubTab, setActiveSubTab] = useState('problems'); // 'problems' | 'users'
@@ -66,12 +67,31 @@ export function CommunityModerationView() {
         if (pData.problems) setProblems(pData.problems);
       }
 
-      // Fetch users
+      // Fetch users from admin API and Firestore
+      let apiUsers = [];
       const uRes = await apiFetch('/api/admin/users');
       if (uRes.ok) {
         const uData = await uRes.json();
-        if (uData.users) setUsers(uData.users);
+        if (Array.isArray(uData.users)) apiUsers = uData.users;
       }
+
+      // Also pull directly from client Firestore to ensure freshly registered Firestore users are captured
+      const firestoreUsers = await authService.fetchAllFirestoreUsers().catch(() => []);
+
+      const userMap = new Map();
+      for (const u of apiUsers) {
+        const key = u.uid || u.email;
+        if (key) userMap.set(key, u);
+      }
+      for (const fu of firestoreUsers) {
+        const key = fu.uid || fu.email;
+        if (key) {
+          const existing = userMap.get(key) || {};
+          userMap.set(key, { ...existing, ...fu });
+        }
+      }
+
+      setUsers(Array.from(userMap.values()));
     } catch (err) {
       console.warn('[CommunityModeration] Error loading moderation data:', err);
     } finally {

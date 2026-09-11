@@ -19,6 +19,14 @@ import {
   deleteUser as fbDeleteUser,
   onAuthStateChanged as fbOnAuthStateChanged,
 } from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  collection,
+  getDocs,
+} from 'firebase/firestore';
 import { getApiUrl, resolveAvatarUrl } from '../config/api.js';
 
 export const AUTHORIZED_ADMIN_EMAIL = 'rajshreeakm@gmail.com';
@@ -71,10 +79,15 @@ export let isFirebaseConfigured = Boolean(
 
 let firebaseApp = null;
 let firebaseAuth = null;
+let firestoreDb = null;
 let googleProvider = null;
 let githubProvider = null;
 let facebookProvider = null;
 let yahooProvider = null;
+
+export function getClientFirestore() {
+  return firestoreDb;
+}
 
 function setupFirebaseInstance(configToUse) {
   try {
@@ -84,6 +97,11 @@ function setupFirebaseInstance(configToUse) {
       firebaseApp = initializeApp(configToUse);
     }
     firebaseAuth = getAuth(firebaseApp);
+    try {
+      firestoreDb = getFirestore(firebaseApp);
+    } catch (fsErr) {
+      console.warn('[FirebaseClient] Firestore initialization notice:', fsErr.message);
+    }
     
     // Google Provider
     googleProvider = new GoogleAuthProvider();
@@ -425,10 +443,118 @@ export const authService = {
     // 4. Real-time broadcast to all subscribers
     dispatchAuthState(mergedUser);
 
+    // 5. Direct client-side Firestore synchronization
+    if (firebaseAuth?.currentUser) {
+      await this.syncUserToFirestore(firebaseAuth.currentUser, {
+        displayName: mergedUser.displayName,
+        bio: mergedUser.bio,
+        discipline: mergedUser.discipline,
+        photoURL: mergedUser.photoURL,
+        portfolioUrl: mergedUser.portfolioUrl,
+      }).catch(() => {});
+    }
+
     return {
       success: true,
       user: mergedUser,
     };
+  },
+
+  /**
+   * Directly syncs an authenticated user into Firestore collection('users')
+   * Uses client credentials (request.auth.uid) to satisfy firestore.rules
+   */
+  async syncUserToFirestore(user, extraData = {}) {
+    if (!firestoreDb || !user?.uid) return null;
+    try {
+      const userRef = doc(firestoreDb, 'users', user.uid);
+      const isRajshree = (user.email || '').toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+
+      const dataToSave = {
+        uid: user.uid,
+        email: (user.email || '').toLowerCase(),
+        emailVerified: Boolean(user.emailVerified),
+        displayName: extraData.displayName || user.displayName || (user.email ? user.email.split('@')[0] : 'Engineer'),
+        photoURL: extraData.photoURL !== undefined ? extraData.photoURL : (user.photoURL || null),
+        role: isRajshree ? 'admin' : 'member',
+        isAdmin: isRajshree,
+        status: 'active',
+        connectionCredits: isRajshree ? 9999 : 5,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (extraData.bio !== undefined) dataToSave.bio = extraData.bio;
+      if (extraData.discipline !== undefined) dataToSave.discipline = extraData.discipline;
+      if (extraData.portfolioUrl !== undefined) dataToSave.portfolioUrl = extraData.portfolioUrl;
+      if (extraData.photoMetadata !== undefined) dataToSave.photoMetadata = extraData.photoMetadata;
+
+      await setDoc(userRef, dataToSave, { merge: true });
+      return dataToSave;
+    } catch (err) {
+      console.warn('[FirestoreClient] Direct sync notice:', err.message);
+      return null;
+    }
+  },
+
+  /**
+   * Uploads an avatar image (base64 dataUrl or binary) to Cloudinary -> Firebase
+   */
+  async uploadAvatar(dataUrl) {
+    if (!dataUrl) {
+      return { success: false, error: 'No image data provided.' };
+    }
+
+    const token = await this.getIdToken();
+    try {
+      const res = await fetch(getApiUrl('/api/auth/upload-avatar'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ dataUrl }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.photoURL && firebaseAuth?.currentUser) {
+          await this.syncUserToFirestore(firebaseAuth.currentUser, {
+            photoURL: data.photoURL,
+            photoMetadata: data.user?.photoMetadata,
+          }).catch(() => {});
+        }
+        await this.refreshCurrentUser();
+        return data;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error: errData.error || 'Failed to upload photo.',
+          code: errData.code || 'photo/upload-error',
+        };
+      }
+    } catch (err) {
+      return {
+        success: false,
+        error: err.message || 'Network error uploading photo.',
+      };
+    }
+  },
+
+  /**
+   * Fetches all registered users from Firestore directly from the client.
+   * Useful when server-side service account is in staging/dev.
+   */
+  async fetchAllFirestoreUsers() {
+    if (!firestoreDb) return [];
+    try {
+      const usersCol = collection(firestoreDb, 'users');
+      const snap = await getDocs(usersCol);
+      return snap.docs.map(d => d.data());
+    } catch (err) {
+      console.warn('[FirestoreClient] Error listing users from Firestore:', err.message);
+      return [];
+    }
   },
 
   /**
@@ -759,13 +885,50 @@ export const authService = {
   },
 
   /**
-   * Standard Email & Password Sign Up (Restricted in V0 to enforce verified Google OAuth)
+   * Standard Email & Password Sign Up
    */
-  async signUpWithEmail() {
+  async signUpWithEmail(email, password, displayName = '') {
+    await ensureInitialized();
+
+    if (isFirebaseConfigured && firebaseAuth) {
+      try {
+        const cleanEmail = (email || '').trim().toLowerCase();
+        const result = await createUserWithEmailAndPassword(firebaseAuth, cleanEmail, password);
+        const user = result.user;
+
+        const cleanName = (displayName || '').trim() || cleanEmail.split('@')[0] || 'Engineer';
+        await updateProfile(user, { displayName: cleanName }).catch(() => {});
+
+        const idToken = await user.getIdToken().catch(() => null);
+        if (idToken) {
+          await this._setLocalAuthenticatedSession(idToken).catch(() => {});
+        }
+
+        // Direct write to client-side Firestore
+        await this.syncUserToFirestore(user, { displayName: cleanName }).catch(() => {});
+
+        const userProfile = this._formatUserProfile(user);
+        userProfile.displayName = cleanName;
+        dispatchAuthState(userProfile);
+
+        return {
+          success: true,
+          user: userProfile,
+          idToken,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: this._mapAuthError(err, 'Sign Up'),
+          code: err.code,
+        };
+      }
+    }
+
     return {
       success: false,
-      error: 'To guarantee authentic community identity and prevent unverified accounts, new V0 registration requires Google Authentication. Please use Continue with Google.',
-      code: 'auth/registration-restricted',
+      error: 'Firebase Authentication is not configured on this deployment.',
+      code: 'auth/not-configured',
     };
   },
 
@@ -857,7 +1020,8 @@ export const authService = {
           };
           dispatchAuthState(profile);
 
-          // Sync full canonical database profile seamlessly in background without flickering
+          // Sync into client-side Firestore & full canonical database profile seamlessly
+          this.syncUserToFirestore(user).catch(() => {});
           this.refreshCurrentUser().catch(() => {});
         } else {
           // If Firebase signed out, check if a local session is still active

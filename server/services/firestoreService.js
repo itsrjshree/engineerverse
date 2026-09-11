@@ -261,26 +261,41 @@ export async function getOrCreateUser(userPayload) {
       const isAdmin = isAuthorizedAdminUser(existing.email, existing.uid, emailVerified || existing.emailVerified);
       const effectiveRole = isAdmin ? 'admin' : (existing.role === 'admin' && !isAdmin ? 'member' : existing.role || 'member');
 
-      const updates = {
-        lastActiveAt: nowIso,
-        updatedAt: nowIso,
-      };
+      const updates = {};
+      let hasChanges = false;
+
+      // Throttle lastActiveAt updates to at least 15 minutes to stop continuous DB churn and console blinking
+      const lastActiveMs = existing.lastActiveAt ? new Date(existing.lastActiveAt).getTime() : 0;
+      const shouldUpdateActive = !existing.lastActiveAt || (Date.now() - lastActiveMs > 15 * 60 * 1000);
+
+      if (shouldUpdateActive) {
+        updates.lastActiveAt = nowIso;
+        updates.updatedAt = nowIso;
+        hasChanges = true;
+      }
 
       if (emailVerified && !existing.emailVerified) {
         updates.emailVerified = true;
+        hasChanges = true;
       }
 
       if (existing.role !== effectiveRole) {
         updates.role = effectiveRole;
         updates.isAdmin = isAdmin;
+        hasChanges = true;
       }
 
-      if (isAdmin && existing.connectionCredits < 9999) {
+      if (isAdmin && (existing.connectionCredits || 0) < 9999) {
         updates.connectionCredits = 9999;
+        hasChanges = true;
       }
 
-      await userDocRef.update(updates);
-      return sanitizeUserDocument({ ...existing, ...updates });
+      if (hasChanges) {
+        await userDocRef.update(updates);
+        return sanitizeUserDocument({ ...existing, ...updates });
+      }
+
+      return sanitizeUserDocument(existing);
     }
 
     // Check if an existing account exists by verified email to prevent duplicate records
@@ -303,15 +318,6 @@ export async function getOrCreateUser(userPayload) {
 
         if (isTargetAdmin && (existingByEmail.connectionCredits || 0) < 9999) {
           updates.connectionCredits = 9999;
-        }
-
-        // Clean up conflicting alias document if UID changed
-        if (existingByEmail.uid && existingByEmail.uid !== canonicalUid) {
-          try {
-            await db.collection('users').doc(existingByEmail.uid).delete();
-          } catch (e) {
-            console.warn('[FirestoreService] Cleaned alias stub doc:', e.message);
-          }
         }
 
         const mergedDoc = {
@@ -398,14 +404,24 @@ export async function updateUserProfile(uid, rawUpdates) {
     const docRef = db.collection('users').doc(uid);
     const snap = await docRef.get();
 
-    if (!snap.exists) {
-      const err = new Error('User record not found in Firestore.');
-      err.code = 'profile/user-not-found';
-      err.status = 404;
-      throw err;
+    let currentDoc = snap.exists ? snap.data() : null;
+    if (!currentDoc) {
+      currentDoc = {
+        uid,
+        email: '',
+        emailVerified: false,
+        displayName: 'Community Engineer',
+        role: 'member',
+        isAdmin: false,
+        status: 'active',
+        connectionCredits: 5,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+      };
+      await docRef.set(currentDoc, { merge: true });
     }
 
-    const currentDoc = snap.data();
     const cleanUpdates = {};
 
     for (const key of Object.keys(rawUpdates)) {
@@ -480,12 +496,9 @@ export async function updateProfilePhoto(uid, photoData) {
   }
 
   // Read current user document from Firestore to track existing photo asset
-  const existingUser = await getUserByUid(uid);
+  let existingUser = await getUserByUid(uid);
   if (!existingUser) {
-    const err = new Error('User record not found in Firestore.');
-    err.code = 'profile/user-not-found';
-    err.status = 404;
-    throw err;
+    existingUser = await getOrCreateUser({ uid });
   }
 
   const oldPublicId = existingUser.photoMetadata?.publicId || null;

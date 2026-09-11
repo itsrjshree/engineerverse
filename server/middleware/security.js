@@ -110,6 +110,13 @@ export function corsMiddleware(req, res, next) {
  */
 function sanitizeString(str) {
   if (typeof str !== 'string') return str;
+  // Preserve base64 image data URLs without stripping characters from binary data
+  if (str.startsWith('data:image/')) {
+    const trimmed = str.trim();
+    if (/^data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+$/.test(trimmed)) {
+      return trimmed;
+    }
+  }
   // Strip <script>...</script> tags and enclosed code
   let sanitized = str.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gis, '');
   // Strip <style>...</style> tags and enclosed css
