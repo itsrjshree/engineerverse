@@ -284,9 +284,17 @@ class UsersStore {
   }
 
   async deleteUser(uid) {
+    // NOTE: previously this class had TWO deleteUser() method definitions.
+    // In JavaScript, the second definition silently wins — meaning the
+    // problem-cleanup cascade below was being skipped on every real
+    // deletion, and the in-memory map cleanup only ran if the Firestore
+    // delete reported success. This merged version restores the cascade
+    // and keeps the success check.
     if (!uid) return { success: false, error: 'User ID is required.' };
 
-    // Cascade problems cleanup
+    // Cascade problems cleanup — must happen regardless of whether Firestore
+    // deletion ultimately succeeds, so an aborted deletion doesn't leave a
+    // deleted-looking user with orphaned problem ownership.
     try {
       problemsStore.purgeUserData(uid);
     } catch (err) {
@@ -295,12 +303,13 @@ class UsersStore {
 
     const result = await firestoreService.deleteUser(uid);
 
-    // Clean memory maps
-    const user = this.usersById.get(uid);
-    if (user && user.email) {
-      this.emailToUid.delete(user.email.toLowerCase());
+    if (result.success) {
+      const user = this.usersById.get(uid);
+      if (user && user.email) {
+        this.emailToUid.delete(user.email.toLowerCase());
+      }
+      this.usersById.delete(uid);
     }
-    this.usersById.delete(uid);
 
     return result;
   }
@@ -365,17 +374,6 @@ class UsersStore {
     return result;
   }
 
-  async deleteUser(uid) {
-    if (!uid) return { success: false, error: 'User ID is required.' };
-    const result = await firestoreService.deleteUser(uid);
-    if (result.success) {
-      const u = this.usersById.get(uid);
-      if (u?.email) this.emailToUid.delete(u.email);
-      this.usersById.delete(uid);
-    }
-    return result;
-  }
-
   async getAuditLogs(limitCount = 100) {
     if (process.env.NODE_ENV === 'production') {
       return firestoreService.getAuditLogs(limitCount);
@@ -430,13 +428,28 @@ class UsersStore {
     if (u && u.supportsCount > 0) u.supportsCount -= 1;
   }
 
-  deductConnectionCredit(uid) {
+  /**
+   * Deducts 1 connection credit. This is now a proper async call that awaits
+   * the atomic Firestore transaction (via firestoreService -> firestoreCreditsService)
+   * BEFORE reporting success, and only updates the in-memory dev/test cache
+   * after Firestore confirms the deduction. Previously this mutated an
+   * in-memory number synchronously and fired the real Firestore write
+   * fire-and-forget with a swallowed .catch(() => {}) — meaning a caller
+   * could be told "success" while the authoritative balance never actually
+   * changed (or, under concurrent calls, could go negative).
+   * Callers of this function must now `await` it.
+   */
+  async deductConnectionCredit(uid, options = {}) {
     const u = this.usersById.get(uid);
     if (u && (u.isAdmin || u.role === 'admin')) return true;
-    if (u && (u.connectionCredits || 0) <= 0) return false;
-    if (u) u.connectionCredits -= 1;
-    firestoreService.deductConnectionCredit(uid).catch(() => {});
-    return true;
+
+    const success = await firestoreService.deductConnectionCredit(uid, options);
+
+    if (success && u) {
+      u.connectionCredits = Math.max(0, (u.connectionCredits || 0) - 1);
+    }
+
+    return success;
   }
 }
 

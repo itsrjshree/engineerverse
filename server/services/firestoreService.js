@@ -898,29 +898,23 @@ export async function reactivateUser(targetUid, actorId) {
 }
 
 export async function setUserCredits(targetUid, credits, actorId) {
-  const db = getFirestoreInstance();
-  const docRef = db.collection('users').doc(targetUid);
-  const snap = await docRef.get();
-  if (!snap.exists) return { success: false, error: 'User not found' };
+  // NOTE: credit mutations must go through the single atomic ledger service
+  // (firestoreCreditsService.setCreditsAdmin) so that users/{uid}.connectionCredits
+  // and creditAccounts/{uid}.balance never drift apart. This function is kept as a
+  // thin compatibility wrapper — do not reintroduce a direct users/{uid} write here.
+  const { setCreditsAdmin } = await import('./firestoreCreditsService.js');
+  const result = await setCreditsAdmin({ targetUid, newBalance: credits, actorId });
 
-  const target = snap.data();
-  const isAdmin = isAuthorizedAdminUser(target.email, target.uid, target.emailVerified);
-  const finalCredits = isAdmin ? 9999 : Math.max(0, parseInt(credits, 10) || 0);
+  if (result.success) {
+    await logAudit({
+      action: 'CREDITS_ADJUSTED',
+      actorId,
+      targetUid,
+      details: { credits: result.connectionCredits },
+    });
+  }
 
-  const nowIso = new Date().toISOString();
-  await docRef.update({
-    connectionCredits: finalCredits,
-    updatedAt: nowIso,
-  });
-
-  await logAudit({
-    action: 'CREDITS_ADJUSTED',
-    actorId,
-    targetUid,
-    details: { credits: finalCredits },
-  });
-
-  return { success: true, connectionCredits: finalCredits };
+  return result;
 }
 
 export async function getAllUsers() {
@@ -957,25 +951,20 @@ export async function incrementCounter(uid, fieldName, amount = 1) {
   }
 }
 
-export async function deductConnectionCredit(uid) {
+export async function deductConnectionCredit(uid, { reason = 'GENERIC_DEDUCTION', referenceId = null } = {}) {
+  // NOTE: this used to be a non-atomic read-then-write (a real race condition —
+  // two concurrent calls could both read balance=1 and both succeed, taking the
+  // balance negative). It now delegates to the atomic transactional ledger in
+  // firestoreCreditsService, which is the single authoritative credit-mutation
+  // path used everywhere else (see firestoreProblemsService.js).
   if (!uid) return false;
   try {
-    const db = getFirestoreInstance();
-    const docRef = db.collection('users').doc(uid);
-    const snap = await docRef.get();
-    if (!snap.exists) return false;
-
-    const data = snap.data();
-    if (data.isAdmin || data.role === 'admin') return true;
-    if ((data.connectionCredits || 0) <= 0) return false;
-
-    await docRef.update({
-      connectionCredits: FieldValue.increment(-1),
-      updatedAt: new Date().toISOString(),
-    });
-    return true;
+    const { deductCredit } = await import('./firestoreCreditsService.js');
+    const result = await deductCredit({ uid, reason, referenceId });
+    return Boolean(result.success);
   } catch (err) {
     console.warn(`[FirestoreService] Deduct credit warning for ${uid}:`, err.message);
+    if (process.env.NODE_ENV === 'production') throw err;
     return false;
   }
 }
