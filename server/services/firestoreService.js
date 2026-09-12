@@ -14,6 +14,7 @@
 import crypto from 'crypto';
 import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import { config } from '../config.js';
 import { AUTHORIZED_ADMIN_EMAIL, getAuthorizedAdminUid } from '../middleware/auth.js';
 import { uploadImageToCloudinary, deleteImageFromCloudinary } from './cloudinaryService.js';
@@ -180,6 +181,42 @@ export function isAuthorizedAdminUser(email, uid, emailVerified) {
 }
 
 /**
+ * Keeps the Firebase Auth custom claim `admin: true/false` in sync with the
+ * server-side authorization decision made by isAuthorizedAdminUser(). This
+ * claim is what firestore.rules checks (request.auth.token.admin == true) —
+ * Firestore rules cannot see our env vars or Firestore documents mid-request
+ * for this purpose, so the claim is the correct place to expose the decision
+ * to the rules layer. This is defense-in-depth ONLY: the primary authorization
+ * boundary remains the backend's requireAdmin middleware using
+ * isAuthorizedAdminUser() directly against ADMIN_FIREBASE_UID — the claim is
+ * never the sole gate for privileged backend mutations.
+ * Never let a claim-sync failure block login — it is logged, not swallowed
+ * silently, but it fails open on the LOGIN path (the backend authorization
+ * check does not depend on it) and fails closed on the RULES path (until the
+ * claim is set, Firestore rules will simply not grant admin-only client access,
+ * which is the safe direction to fail in).
+ */
+async function syncAdminClaim(uid, shouldBeAdmin) {
+  if (!uid) return;
+  try {
+    const auth = getAuth();
+    const userRecord = await auth.getUser(uid);
+    const currentClaim = Boolean(userRecord.customClaims?.admin);
+    if (currentClaim !== Boolean(shouldBeAdmin)) {
+      await auth.setCustomUserClaims(uid, {
+        ...(userRecord.customClaims || {}),
+        admin: Boolean(shouldBeAdmin),
+      });
+      console.log(`[FirestoreService] Synced admin custom claim for ${uid} -> ${shouldBeAdmin}`);
+    }
+  } catch (err) {
+    // Do not throw — this must never block login/reconciliation. Log clearly
+    // so it's visible in server logs / admin diagnostics rather than silent.
+    console.error(`[FirestoreService] FAILED to sync admin custom claim for ${uid}:`, err.message);
+  }
+}
+
+/**
  * Reads a user document by Firebase UID from Firestore
  */
 export async function getUserByUid(uid) {
@@ -292,9 +329,11 @@ export async function getOrCreateUser(userPayload) {
 
       if (hasChanges) {
         await userDocRef.update(updates);
+        syncAdminClaim(uid, isAdmin).catch(() => {});
         return sanitizeUserDocument({ ...existing, ...updates });
       }
 
+      syncAdminClaim(uid, isAdmin).catch(() => {});
       return sanitizeUserDocument(existing);
     }
 
@@ -327,6 +366,7 @@ export async function getOrCreateUser(userPayload) {
         };
 
         await targetRef.set(mergedDoc, { merge: true });
+        syncAdminClaim(canonicalUid, isTargetAdmin).catch(() => {});
         return sanitizeUserDocument(mergedDoc);
       }
     }
@@ -365,6 +405,7 @@ export async function getOrCreateUser(userPayload) {
     };
 
     await userDocRef.set(newUserDoc);
+    syncAdminClaim(uid, isAdmin).catch(() => {});
     return sanitizeUserDocument(newUserDoc);
   } catch (err) {
     console.error(`[FirestoreService] Error in getOrCreateUser for ${uid}:`, err.message);

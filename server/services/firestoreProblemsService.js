@@ -226,28 +226,39 @@ export async function getAllApproved(currentUid = null, filters = {}) {
 
 /**
  * Get solutions for a specific problem
+ *
+ * CANONICAL STORE: `problemSolutions/{solutionId}` (top-level) is the
+ * authoritative collection — every mutation (create, connect, decline) writes
+ * to it unconditionally. The `problems/{problemId}/solutions/{solutionId}`
+ * subcollection is a best-effort secondary write (its updates on
+ * connect/decline are wrapped in a swallowed try/catch — see
+ * respondToSolution()), so it can silently fall behind. Reading it FIRST, as
+ * this function previously did, could surface a stale status (e.g. showing
+ * "pending" after the proposal was actually accepted). We now read the
+ * top-level collection first; the subcollection is only consulted as a
+ * legacy fallback if the top-level query is unexpectedly empty.
  */
 export async function getSolutionsForProblem(problemId, currentUid = null, authorId = null, isAdmin = false) {
   const db = getFirestoreInstance();
   try {
     let solutions = [];
-    const problemRef = db.collection('problems').doc(problemId);
 
-    // If subcollection exists
-    if (typeof problemRef.collection === 'function') {
-      const subSnap = await problemRef.collection('solutions').get();
-      if (subSnap && subSnap.docs) {
-        solutions = subSnap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    const topCol = db.collection('problemSolutions');
+    if (typeof topCol.where === 'function') {
+      const topSnap = await topCol.where('problemId', '==', problemId).get();
+      if (topSnap && topSnap.docs) {
+        solutions = topSnap.docs.map((d) => ({ ...d.data(), id: d.id }));
       }
     }
 
-    // Fallback/compatibility: check top-level problemSolutions collection
+    // Legacy fallback only — should not normally trigger, since the
+    // top-level collection is written unconditionally on every mutation.
     if (solutions.length === 0) {
-      const topCol = db.collection('problemSolutions');
-      if (typeof topCol.where === 'function') {
-        const topSnap = await topCol.where('problemId', '==', problemId).get();
-        if (topSnap && topSnap.docs) {
-          solutions = topSnap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      const problemRef = db.collection('problems').doc(problemId);
+      if (typeof problemRef.collection === 'function') {
+        const subSnap = await problemRef.collection('solutions').get();
+        if (subSnap && subSnap.docs) {
+          solutions = subSnap.docs.map((d) => ({ ...d.data(), id: d.id }));
         }
       }
     }

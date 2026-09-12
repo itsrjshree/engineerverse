@@ -14,6 +14,13 @@ import assert from 'node:assert';
 import http from 'node:http';
 import { initializeApp, getApps, deleteApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+
+// createServer() fails closed without SESSION_SECRET (by design, per Phase 1
+// security remediation) — this test needs a running server, not a real
+// production secret, so we set a test-only value here, matching the same
+// pattern already used in test-admin-auth.js and test-phase1-security.js.
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'a_very_secure_test_session_secret_with_more_than_32_characters';
+
 import { createServer } from '../server/index.js';
 import { normalizeFirebaseApiKey, isValidFirebaseApiKey } from '../src/services/firebaseClient.js';
 

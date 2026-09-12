@@ -12,15 +12,38 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && 
-             request.auth.token.email != null &&
-             request.auth.token.email.lower() == 'rajshreeakm@gmail.com';
+      // Admin identity is tied to a Firebase custom claim (`admin: true`),
+      // synced server-side (see server/services/firestoreService.js
+      // syncAdminClaim()) only when a user's UID matches the server-side
+      // ADMIN_FIREBASE_UID env var AND their email/emailVerified match the
+      // authorized admin account. A raw email string on the auth token is
+      // NEVER trusted directly here — email alone must never grant admin
+      // privileges, since it is not itself proof of the authorized identity.
+      return isAuthenticated() && request.auth.token.admin == true;
     }
 
     // 1. User Profiles & Engineer Profiles
     match /users/{userId} {
+      // READ: authenticated users may read user documents (needed for e.g.
+      // displaying public-ish profile info in-app). Consider narrowing this
+      // further to owner+admin only if full user documents should not be
+      // broadly listable — tracked as a follow-up, not changed here since
+      // some existing UI may depend on the current broader read.
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || isAdmin();
+
+      // WRITE: client writes are intentionally disallowed entirely.
+      // users/{uid} contains privileged fields (role, isAdmin, status,
+      // connectionCredits) alongside self-editable ones (displayName, bio,
+      // discipline, portfolioUrl, photoURL) in the SAME document, so an
+      // owner-based write rule cannot safely be field-scoped without
+      // request.resource.data.diff() checks on every field individually.
+      // All legitimate mutations already go through the backend (Admin SDK,
+      // which bypasses these rules entirely) via PUT /api/auth/profile
+      // (self-editable fields) and the /api/admin/users/:uid/* endpoints
+      // (privileged fields, requireAdmin-protected). A direct client write
+      // here would previously have let any authenticated owner self-grant
+      // role: 'admin' / isAdmin: true / unlimited connectionCredits.
+      allow write: if false;
     }
 
     match /engineerProfiles/{userId} {
@@ -93,7 +116,7 @@ service cloud.firestore {
 
     match /pledges/{pledgeId} {
       allow read: if true;
-      allow create: if true;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 

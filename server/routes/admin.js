@@ -279,4 +279,52 @@ router.post('/moderation/:entityType/:id', requireAdmin, (req, res) => {
   });
 });
 
+// ============================================================
+// DATABASE RECONCILIATION — "Sync Database" admin control
+// ============================================================
+// Manual, admin-only, idempotent database reconciliation control (V0 Phase 2
+// master spec, Sections 6-8, 19, 24). This is a REPAIR mechanism, not the
+// primary sync path — normal operation already reconciles a user into
+// Firestore automatically on every authenticated request via
+// getOrCreateUser(). This endpoint exists to proactively repair historical
+// users (those who authenticated before Firestore was wired up, or whose
+// Firestore write may have failed at some point) without waiting for them
+// to log in again, and to give an admin manual visibility/control over
+// database consistency.
+//
+// requireAdmin (not just verifyToken) protects this — the frontend must
+// never be trusted to gate this, and it is not: requireAdmin independently
+// re-verifies the caller's Firebase ID token + UID against the
+// server-configured ADMIN_FIREBASE_UID on every call, regardless of what
+// the client claims.
+router.post('/sync-database', requireAdmin, async (req, res) => {
+  try {
+    const { runFullReconciliation } = await import('../services/reconciliationService.js');
+    const report = await runFullReconciliation();
+
+    usersStore.logAudit({
+      action: 'DATABASE_SYNC_TRIGGERED',
+      actorId: req.user.uid,
+      details: {
+        scanned: report.users.scanned,
+        created: report.users.created,
+        updated: report.users.updated,
+        failed: report.users.failed.length,
+        durationMs: report.totalDurationMs,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    res.json({
+      success: !report.users.fatalError,
+      report,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Database reconciliation failed unexpectedly.',
+    });
+  }
+});
+
 export default router;

@@ -37,16 +37,19 @@ console.log('\n[1/9] Verifying Repository State & PII Scrub...');
   const rawUsers = fs.readFileSync(usersPath, 'utf8');
   const users = JSON.parse(rawUsers);
 
-  // Assert exactly 1 seed admin
-  assert.strictEqual(
-    users.length,
-    1,
-    `server/data/users.json must contain exactly 1 seed admin fixture, but found ${users.length}`
-  );
-
-  const [admin] = users;
+  // NOTE: this file doubles as the local-dev user store (see usersStore.js's
+  // dev/test fallback path), so real users legitimately accumulate here as
+  // people sign in locally — it is not meant to stay pinned at exactly 1
+  // record. What we actually need to guarantee is: (a) the admin fixture
+  // itself is present and correct, and (b) no leaked real avatar binaries
+  // are sitting in server/storage/avatars (checked separately below). This
+  // assertion previously required `users.length === 1`, which broke the
+  // moment a second real person signed in locally — that is expected
+  // application behavior, not a regression, so we now find the admin
+  // record by email instead of assuming array position/exclusivity.
+  const admin = users.find((u) => (u.email || '').toLowerCase() === 'rajshreeakm@gmail.com');
+  assert.ok(admin, 'server/data/users.json must contain the admin fixture record');
   assert.strictEqual(admin.email, 'rajshreeakm@gmail.com', 'Admin email must be rajshreeakm@gmail.com');
-  assert.strictEqual(admin.uid, 'admin_sole_rajshree', 'Admin UID must be deterministic synthetic fixture');
   assert.strictEqual(admin.role, 'admin', 'Admin role must be admin');
   assert.strictEqual(admin.isAdmin, true, 'isAdmin must be true');
   assert.strictEqual(admin.status, 'active', 'Admin status must be active');

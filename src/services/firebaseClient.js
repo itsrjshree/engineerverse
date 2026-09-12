@@ -19,14 +19,6 @@ import {
   deleteUser as fbDeleteUser,
   onAuthStateChanged as fbOnAuthStateChanged,
 } from 'firebase/auth';
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDoc,
-  collection,
-  getDocs,
-} from 'firebase/firestore';
 import { getApiUrl, resolveAvatarUrl } from '../config/api.js';
 
 export const AUTHORIZED_ADMIN_EMAIL = 'rajshreeakm@gmail.com';
@@ -79,15 +71,10 @@ export let isFirebaseConfigured = Boolean(
 
 let firebaseApp = null;
 let firebaseAuth = null;
-let firestoreDb = null;
 let googleProvider = null;
 let githubProvider = null;
 let facebookProvider = null;
 let yahooProvider = null;
-
-export function getClientFirestore() {
-  return firestoreDb;
-}
 
 function setupFirebaseInstance(configToUse) {
   try {
@@ -97,11 +84,6 @@ function setupFirebaseInstance(configToUse) {
       firebaseApp = initializeApp(configToUse);
     }
     firebaseAuth = getAuth(firebaseApp);
-    try {
-      firestoreDb = getFirestore(firebaseApp);
-    } catch (fsErr) {
-      console.warn('[FirebaseClient] Firestore initialization notice:', fsErr.message);
-    }
     
     // Google Provider
     googleProvider = new GoogleAuthProvider();
@@ -461,37 +443,56 @@ export const authService = {
   },
 
   /**
-   * Directly syncs an authenticated user into Firestore collection('users')
-   * Uses client credentials (request.auth.uid) to satisfy firestore.rules
+   * Persists profile updates for the current authenticated user.
+   *
+   * SECURITY NOTE: this function previously wrote directly to Firestore via
+   * the client SDK's setDoc(), trusting `firestore.rules`' isOwner(userId)
+   * check as the only gate. That rule allows a client to write ANY field on
+   * their own users/{uid} document — including role, isAdmin, status, and
+   * connectionCredits — with no field-level restriction, so a user could
+   * open devtools and self-grant admin/unlimited credits directly against
+   * Firestore, bypassing this function's own (client-side, therefore
+   * tamperable) isRajshree logic entirely. Privileged fields must only ever
+   * be decided server-side. This now calls the existing, already-secure
+   * PUT /api/auth/profile endpoint, which verifies a real Firebase ID token
+   * and strictly whitelists only non-privileged, self-editable fields
+   * (displayName, bio, discipline, photoURL, portfolioUrl) — role, isAdmin,
+   * status and connectionCredits are never accepted from the client there.
+   * The function name/signature is kept identical so existing call sites
+   * do not need to change.
    */
   async syncUserToFirestore(user, extraData = {}) {
-    if (!firestoreDb || !user?.uid) return null;
+    if (!user?.uid) return null;
     try {
-      const userRef = doc(firestoreDb, 'users', user.uid);
-      const isRajshree = (user.email || '').toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
+      const token = await this.getIdToken();
+      if (!token) return null;
 
-      const dataToSave = {
-        uid: user.uid,
-        email: (user.email || '').toLowerCase(),
-        emailVerified: Boolean(user.emailVerified),
-        displayName: extraData.displayName || user.displayName || (user.email ? user.email.split('@')[0] : 'Engineer'),
-        photoURL: extraData.photoURL !== undefined ? extraData.photoURL : (user.photoURL || null),
-        role: isRajshree ? 'admin' : 'member',
-        isAdmin: isRajshree,
-        status: 'active',
-        connectionCredits: isRajshree ? 9999 : 5,
-        updatedAt: new Date().toISOString(),
-      };
+      const payload = {};
+      if (extraData.displayName !== undefined) payload.displayName = extraData.displayName;
+      else if (user.displayName !== undefined) payload.displayName = user.displayName;
+      if (extraData.bio !== undefined) payload.bio = extraData.bio;
+      if (extraData.discipline !== undefined) payload.discipline = extraData.discipline;
+      if (extraData.portfolioUrl !== undefined) payload.portfolioUrl = extraData.portfolioUrl;
+      if (extraData.photoURL !== undefined) payload.photoURL = extraData.photoURL;
 
-      if (extraData.bio !== undefined) dataToSave.bio = extraData.bio;
-      if (extraData.discipline !== undefined) dataToSave.discipline = extraData.discipline;
-      if (extraData.portfolioUrl !== undefined) dataToSave.portfolioUrl = extraData.portfolioUrl;
-      if (extraData.photoMetadata !== undefined) dataToSave.photoMetadata = extraData.photoMetadata;
+      const res = await fetch(getApiUrl('/api/auth/profile'), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-      await setDoc(userRef, dataToSave, { merge: true });
-      return dataToSave;
+      if (!res.ok) {
+        console.warn('[AuthService] Profile sync via backend failed:', res.status);
+        return null;
+      }
+
+      const data = await res.json();
+      return data.user || null;
     } catch (err) {
-      console.warn('[FirestoreClient] Direct sync notice:', err.message);
+      console.warn('[AuthService] Profile sync notice:', err.message);
       return null;
     }
   },
@@ -542,17 +543,28 @@ export const authService = {
   },
 
   /**
-   * Fetches all registered users from Firestore directly from the client.
-   * Useful when server-side service account is in staging/dev.
+   * Fetches all registered users via the secure backend admin endpoint.
+   * SECURITY NOTE: this previously read directly from Firestore's `users`
+   * collection using the client SDK, relying only on
+   * `allow read: if isAuthenticated();` in firestore.rules — meaning ANY
+   * authenticated (non-admin) user could list every user's full profile
+   * document. It now calls GET /api/admin/users, which is protected by the
+   * server's requireAdmin middleware (verified Firebase ID token + UID match
+   * against ADMIN_FIREBASE_UID). Non-admin callers now correctly receive a
+   * 403 instead of full user data.
    */
   async fetchAllFirestoreUsers() {
-    if (!firestoreDb) return [];
     try {
-      const usersCol = collection(firestoreDb, 'users');
-      const snap = await getDocs(usersCol);
-      return snap.docs.map(d => d.data());
+      const token = await this.getIdToken();
+      if (!token) return [];
+      const res = await fetch(getApiUrl('/api/admin/users'), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.users) ? data.users : [];
     } catch (err) {
-      console.warn('[FirestoreClient] Error listing users from Firestore:', err.message);
+      console.warn('[AuthService] Error listing users via backend:', err.message);
       return [];
     }
   },
