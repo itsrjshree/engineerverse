@@ -198,7 +198,7 @@ router.put('/auth/profile', async (req, res) => {
       });
     }
 
-    const { displayName, bio, discipline, photoURL, portfolioUrl } = req.body || {};
+    const { displayName, bio, discipline, photoURL, portfolioUrl, isProfilePublic, isDnaPublic } = req.body || {};
     const { usersStore } = await import('../services/usersStore.js');
 
     try {
@@ -211,6 +211,8 @@ router.put('/auth/profile', async (req, res) => {
         discipline,
         photoURL,
         portfolioUrl,
+        isProfilePublic,
+        isDnaPublic,
       });
 
       res.json({

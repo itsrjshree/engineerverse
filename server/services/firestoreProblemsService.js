@@ -16,7 +16,7 @@
  */
 
 import { getFirestoreInstance, isAuthorizedAdminUser } from './firestoreService.js';
-import { deductCredit } from './firestoreCreditsService.js';
+import { deductCredit, refundCredit } from './firestoreCreditsService.js';
 import { AUTHORIZED_ADMIN_EMAIL } from '../middleware/auth.js';
 
 export const initialSeedProblems = [
@@ -552,47 +552,69 @@ export async function toggleSupport(id, user) {
   const problemRef = db.collection('problems').doc(id);
 
   try {
-    const problemSnap = await problemRef.get();
-    if (!problemSnap.exists) {
-      return { success: false, error: 'Problem not found.', status: 404 };
-    }
+    const executeToggle = async (transaction) => {
+      const problemSnap = await (transaction ? transaction.get(problemRef) : problemRef.get());
+      if (!problemSnap.exists) {
+        return { success: false, error: 'Problem not found.', status: 404 };
+      }
 
-    const problemData = problemSnap.data();
-    const currentSupportSnap = await supportRef.get();
-    const isCurrentlySupported = currentSupportSnap.exists;
+      const problemData = problemSnap.data();
+      const currentSupportSnap = await (transaction ? transaction.get(supportRef) : supportRef.get());
+      const isCurrentlySupported = currentSupportSnap.exists;
 
-    let newSupportCount = typeof problemData.supporterCount === 'number' ? problemData.supporterCount : 0;
-    let nextIsSupported = false;
+      let newSupportCount = typeof problemData.supporterCount === 'number' ? problemData.supporterCount : 0;
+      let nextIsSupported = false;
 
-    if (isCurrentlySupported) {
-      // Remove support
-      await supportRef.delete();
-      newSupportCount = Math.max(0, newSupportCount - 1);
-      nextIsSupported = false;
-    } else {
-      // Add support
-      await supportRef.set({
-        id: supportId,
-        problemId: id,
-        uid: user.uid,
-        userName: user.name || user.displayName || 'Engineer',
-        createdAt: new Date().toISOString(),
-      });
-      newSupportCount += 1;
-      nextIsSupported = true;
-    }
+      if (isCurrentlySupported) {
+        // Remove support
+        if (transaction) {
+          transaction.delete(supportRef);
+        } else {
+          await supportRef.delete();
+        }
+        newSupportCount = Math.max(0, newSupportCount - 1);
+        nextIsSupported = false;
+      } else {
+        // Add support
+        const newSupportDoc = {
+          id: supportId,
+          problemId: id,
+          uid: user.uid,
+          userName: user.name || user.displayName || 'Engineer',
+          createdAt: new Date().toISOString(),
+        };
+        if (transaction) {
+          transaction.set(supportRef, newSupportDoc);
+        } else {
+          await supportRef.set(newSupportDoc);
+        }
+        newSupportCount += 1;
+        nextIsSupported = true;
+      }
 
-    await problemRef.update({
-      supporterCount: newSupportCount,
-      updatedAt: new Date().toISOString(),
-    });
+      const updateData = {
+        supporterCount: newSupportCount,
+        updatedAt: new Date().toISOString(),
+      };
 
-    return {
-      success: true,
-      isSupported: nextIsSupported,
-      supporterCount: newSupportCount,
-      message: nextIsSupported ? 'You are now supporting this engineering challenge.' : 'Support removed.',
+      if (transaction) {
+        transaction.update(problemRef, updateData);
+      } else {
+        await problemRef.update(updateData);
+      }
+
+      return {
+        success: true,
+        isSupported: nextIsSupported,
+        supporterCount: newSupportCount,
+        message: nextIsSupported ? 'You are now supporting this engineering challenge.' : 'Support removed.',
+      };
     };
+
+    if (typeof db.runTransaction === 'function') {
+      return await db.runTransaction(async (t) => executeToggle(t));
+    }
+    return await executeToggle(null);
   } catch (err) {
     console.error(`[ProblemsService] Error toggling support for problem ${id}:`, err.message);
     if (process.env.NODE_ENV === 'production') {
@@ -629,6 +651,7 @@ export async function proposeSolution(problemId, payload, user) {
 
   const db = getFirestoreInstance();
   const problemRef = db.collection('problems').doc(problemId);
+  let creditResult = null;
 
   try {
     const problemSnap = await problemRef.get();
@@ -656,7 +679,7 @@ export async function proposeSolution(problemId, payload, user) {
     }
 
     // Deduct 1 credit atomically
-    const creditResult = await deductCredit({
+    creditResult = await deductCredit({
       uid: user.uid,
       reason: 'SOLUTION_PROPOSAL',
       referenceId: problemId,
@@ -704,6 +727,23 @@ export async function proposeSolution(problemId, payload, user) {
       updatedAt: now,
     });
 
+    // Notify the problem author that an engineer proposed a solution
+    try {
+      const { createNotification } = await import('./notificationService.js');
+      await createNotification({
+        recipientUid: problem.authorId,
+        actorUid: user.uid,
+        actorName: solutionRecord.solverName,
+        type: 'PROPOSAL_RECEIVED',
+        title: 'New Technical Proposal Received',
+        message: `${solutionRecord.solverName} submitted an engineering solution proposal for: "${problem.title}"`,
+        referenceType: 'problem',
+        referenceId: problemId,
+      });
+    } catch (notifErr) {
+      console.warn('[ProblemsService] Notification notice (non-fatal):', notifErr.message);
+    }
+
     return {
       success: true,
       message: 'Your engineering proposal has been submitted to the problem author.',
@@ -711,6 +751,9 @@ export async function proposeSolution(problemId, payload, user) {
       remainingCredits: creditResult.remainingCredits,
     };
   } catch (err) {
+    if (creditResult && creditResult.success) {
+      await refundCredit({ uid: user.uid, amount: 1, reason: 'SOLUTION_CREATION_ROLLBACK' }).catch(() => {});
+    }
     console.error(`[ProblemsService] Error proposing solution to problem ${problemId}:`, err.message);
     if (process.env.NODE_ENV === 'production') {
       const e = new Error('Database service unavailable.');
@@ -797,6 +840,23 @@ export async function respondToSolution(problemId, solutionId, action, user) {
         try {
           await problemRef.collection('solutions').doc(solutionId).update({ status: 'connected', updatedAt: now });
         } catch {}
+      }
+
+      // Notify the solver that the author accepted the connection handshake
+      try {
+        const { createNotification } = await import('./notificationService.js');
+        await createNotification({
+          recipientUid: solution.solverId,
+          actorUid: user.uid,
+          actorName: problem.authorName,
+          type: 'CONNECTION_ACCEPTED',
+          title: 'Handshake Accepted! Direct Connection Established',
+          message: `${problem.authorName} accepted your solution on "${problem.title}". Direct contact is now unlocked!`,
+          referenceType: 'connection',
+          referenceId: connectionId,
+        });
+      } catch (notifErr) {
+        console.warn('[ProblemsService] Notification notice (non-fatal):', notifErr.message);
       }
 
       return {

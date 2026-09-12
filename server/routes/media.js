@@ -31,7 +31,16 @@ function generateInitialAvatarSvg(letter = 'U') {
 router.post('/signature', standardRateLimiter, (req, res) => {
   const { mediaType, folder } = req.body || {};
   const signatureData = generateUploadSignature({ folder, mediaType });
-  res.json(signatureData);
+
+  if (!signatureData.isConfigured) {
+    return res.status(503).json({
+      success: false,
+      isConfigured: false,
+      error: signatureData.error || 'Cloudinary media service is currently unavailable.',
+    });
+  }
+
+  res.json({ success: true, ...signatureData });
 });
 
 /**

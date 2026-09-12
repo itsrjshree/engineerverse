@@ -4,7 +4,7 @@
  * Fully public-facing, inspiring, zero internal EV numbers.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from './ui/Card.jsx';
 import { Badge } from './ui/Badge.jsx';
 import { Button } from './ui/Button.jsx';
@@ -21,16 +21,26 @@ import {
   Shield,
   Download,
   Share2,
+  Rocket,
+  Layers,
 } from 'lucide-react';
 import { BRAND_CONFIG } from '../config/branding.js';
 import { generateShortPublicId, buildCanonicalShareUrl } from '../services/artifacts.js';
+import { apiFetch } from '../config/api.js';
+import { ComingSoonGate } from './ui/ComingSoonGate.jsx';
 
-const MISSIONS = [
+const PILLAR_ICONS = {
+  'Water & Health': Droplet,
+  'Emergency Telecom': Zap,
+  'Accessibility & Inclusion': Cpu,
+  'Agriculture & Healthcare': HeartHandshake,
+};
+
+const FALLBACK_MISSIONS = [
   {
     id: 'mission_clean_water',
     title: 'Autonomous Solar Desalination & Arsenic Filter',
     pillar: 'Water & Health',
-    icon: Droplet,
     impact: 'Safe drinking water for 12,000 coastal & arid villages',
     difficulty: 'Intermediate Hardware / Fluid Dynamics',
     objective:
@@ -46,7 +56,6 @@ const MISSIONS = [
     id: 'mission_mesh_network',
     title: 'Disaster-Resilient Off-Grid Mesh Relay Node',
     pillar: 'Emergency Telecom',
-    icon: Zap,
     impact: 'Zero-downtime emergency communications during cloudbursts and cyclones',
     difficulty: 'Embedded Systems / RF Engineering',
     objective:
@@ -62,7 +71,6 @@ const MISSIONS = [
     id: 'mission_assistive_actuator',
     title: 'Tactile Haptic Matrix for Spatial Navigation',
     pillar: 'Accessibility & Inclusion',
-    icon: Cpu,
     impact: 'Independent mobility for 10M+ visually impaired pedestrians',
     difficulty: 'Mechatronics / Firmware',
     objective:
@@ -78,7 +86,6 @@ const MISSIONS = [
     id: 'mission_cold_chain',
     title: 'Biomass Phase-Change Vaccine & Produce Cooler',
     pillar: 'Agriculture & Healthcare',
-    icon: HeartHandshake,
     impact: 'Zero spoilage of essential vaccines and perishable harvests in remote health centers',
     difficulty: 'Thermodynamics / Materials Science',
     objective:
@@ -93,13 +100,30 @@ const MISSIONS = [
 ];
 
 export function FutureMissionsView({ onSelectMission }) {
+  const [missions, setMissions] = useState(FALLBACK_MISSIONS);
   const [selectedPillar, setSelectedPillar] = useState('All');
   const [pledgedMissions, setPledgedMissions] = useState(new Set());
   const [pledgeNotice, setPledgeNotice] = useState(null);
 
+  useEffect(() => {
+    let isMounted = true;
+    apiFetch('/api/missions')
+      .then((data) => {
+        if (isMounted && data?.missions && Array.isArray(data.missions) && data.missions.length > 0) {
+          setMissions(data.missions);
+        }
+      })
+      .catch((err) => {
+        console.warn('[MissionsView] Using local fallback missions:', err.message);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const pillars = ['All', 'Water & Health', 'Emergency Telecom', 'Accessibility & Inclusion', 'Agriculture & Healthcare'];
 
-  const filteredMissions = MISSIONS.filter(
+  const filteredMissions = missions.filter(
     (m) => selectedPillar === 'All' || m.pillar === selectedPillar
   );
 
@@ -153,7 +177,7 @@ export function FutureMissionsView({ onSelectMission }) {
       {/* Missions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {filteredMissions.map((mission) => {
-          const IconComp = mission.icon;
+          const IconComp = mission.icon || PILLAR_ICONS[mission.pillar] || Rocket;
           const isPledged = pledgedMissions.has(mission.id);
 
           return (
@@ -234,6 +258,16 @@ export function FutureMissionsView({ onSelectMission }) {
             </Card>
           );
         })}
+      </div>
+
+      {/* Feature Gating: Peer Review & Verified Submissions */}
+      <div className="pt-6">
+        <ComingSoonGate
+          featureId="EV-010 / EV-011"
+          title="Automated Bounty Verification & Peer Review"
+          description="Direct code submission pipelines, automated CAD/schematic validators, and on-chain verified credential issuance will activate in upcoming platform releases."
+          targetMilestone="V1 Delivery Sprint"
+        />
       </div>
     </div>
   );

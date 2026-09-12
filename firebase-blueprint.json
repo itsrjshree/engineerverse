@@ -164,6 +164,68 @@
         "timestamp": { "type": "string" }
       },
       "required": ["id", "action", "actorId", "timestamp"]
+    },
+    "missions": {
+      "title": "missions",
+      "description": "Societal engineering missions, blueprints, and real-world specs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "pillar": { "type": "string" },
+        "impact": { "type": "string" },
+        "difficulty": { "type": "string" },
+        "objective": { "type": "string" },
+        "specifications": { "type": "array", "items": { "type": "string" } },
+        "disciplines": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "pillar", "objective"]
+    },
+    "problemSupports": {
+      "title": "problemSupports",
+      "description": "Verified community engineer support votes for problems",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "problemId": { "type": "string" },
+        "uid": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "problemId", "uid", "createdAt"]
+    },
+    "mediaAssets": {
+      "title": "mediaAssets",
+      "description": "Audit registry for uploaded media assets and avatar image assets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "publicId": { "type": "string", "nullable": true },
+        "ownerUid": { "type": "string" },
+        "sha256": { "type": "string" },
+        "provider": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "replaced", "deleted"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "url", "ownerUid", "sha256", "provider", "status"]
+    },
+    "systemCounters": {
+      "title": "systemCounters",
+      "description": "Authoritative aggregated counters for rapid queries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "totalUsers": { "type": "number" },
+        "totalProblems": { "type": "number" },
+        "totalSolutions": { "type": "number" },
+        "totalSupports": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "updatedAt"]
     }
   },
   "firestoreRules": "firestore.rules"

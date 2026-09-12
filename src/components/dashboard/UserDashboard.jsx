@@ -31,7 +31,9 @@ import {
   Send,
   Mail,
   Loader2,
+  Bell,
 } from 'lucide-react';
+import { ComingSoonGate } from '../ui/ComingSoonGate.jsx';
 import { authService, AUTHORIZED_ADMIN_EMAIL } from '../../services/firebaseClient.js';
 import { apiFetch, resolveAvatarUrl } from '../../config/api.js';
 
@@ -42,6 +44,8 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
   const [myProblems, setMyProblems] = useState([]);
   const [mySolutions, setMySolutions] = useState([]);
   const [mySupported, setMySupported] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
   const [actionMessage, setActionMessage] = useState(null);
 
@@ -96,6 +100,16 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
       if (mySupRes.ok) {
         const supData = await mySupRes.json();
         if (supData.problems) setMySupported(supData.problems);
+      }
+
+      // Fetch Notifications
+      const notifRes = await apiFetch('/api/notifications');
+      if (notifRes.ok) {
+        const notifData = await notifRes.json();
+        if (notifData.notifications) {
+          setNotifications(notifData.notifications);
+          setUnreadNotificationCount(notifData.unreadCount || 0);
+        }
       }
     } catch (err) {
       console.warn('[UserDashboard] Failed to load dashboard data:', err);
@@ -244,6 +258,32 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
     }
   };
 
+  const handleMarkAllNotificationsRead = async () => {
+    try {
+      const res = await apiFetch('/api/notifications/read-all', { method: 'PATCH' });
+      if (res.ok) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        setUnreadNotificationCount(0);
+      }
+    } catch (err) {
+      console.warn('Failed to mark all notifications read:', err);
+    }
+  };
+
+  const handleMarkNotificationRead = async (notifId) => {
+    try {
+      const res = await apiFetch(`/api/notifications/${notifId}/read`, { method: 'PATCH' });
+      if (res.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notifId ? { ...n, read: true } : n))
+        );
+        setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
+      }
+    } catch (err) {
+      console.warn('Failed to mark notification read:', err);
+    }
+  };
+
   if (!isOpen) return null;
 
   const isAdmin = currentUser?.email && currentUser.email.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase();
@@ -382,6 +422,20 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
               onClick={() => setActiveTab('my-supported')}
             >
               Supported ({mySupported.length})
+            </TabPill>
+            <TabPill
+              active={activeTab === 'notifications'}
+              onClick={() => setActiveTab('notifications')}
+            >
+              <span className="flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5" />
+                <span>Notifications</span>
+                {unreadNotificationCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-purple-500 text-[10px] font-bold text-white leading-tight">
+                    {unreadNotificationCount}
+                  </span>
+                )}
+              </span>
             </TabPill>
             <TabPill
               active={activeTab === 'profile'}
@@ -717,6 +771,77 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
                 </div>
               )}
 
+              {/* TAB: NOTIFICATIONS */}
+              {activeTab === 'notifications' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-1">
+                    <div className="text-xs text-slate-400">
+                      Real-time updates on solution proposals and engineering collaborations.
+                    </div>
+                    {unreadNotificationCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={handleMarkAllNotificationsRead}
+                        className="text-xs text-purple-400 hover:text-white"
+                      >
+                        Mark all as read
+                      </Button>
+                    )}
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <div className="text-center py-16 border border-dashed border-purple-900/40 rounded-2xl p-6 space-y-3">
+                      <Bell className="w-8 h-8 text-slate-600 mx-auto" />
+                      <p className="text-sm text-slate-400">
+                        No notifications yet.
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        You will be notified when engineers propose architectural solutions to your problems or accept your collaboration requests.
+                      </p>
+                    </div>
+                  ) : (
+                    notifications.map((notif) => (
+                      <Card
+                        key={notif.id}
+                        className={`p-4 flex items-start justify-between gap-4 transition ${
+                          !notif.read
+                            ? 'bg-purple-950/30 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.1)]'
+                            : 'bg-white/[0.02] border-purple-900/30'
+                        }`}
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">
+                              {notif.title}
+                            </span>
+                            {!notif.read && (
+                              <span className="w-2 h-2 rounded-full bg-purple-400 shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {notif.message}
+                          </p>
+                          <span className="text-[10px] text-slate-500 block">
+                            {new Date(notif.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        {!notif.read && (
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => handleMarkNotificationRead(notif.id)}
+                            className="shrink-0 text-xs"
+                          >
+                            Mark read
+                          </Button>
+                        )}
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+
               {/* TAB 4: ROADMAP & PROFILE */}
               {activeTab === 'profile' && (
                 <div className="space-y-6">
@@ -748,6 +873,16 @@ export function UserDashboard({ isOpen, onClose, onOpenSubmitModal, onOpenAdmin,
                         Each solution proposal or connection handshake uses 1 credit to maintain signal-to-noise ratio.
                       </p>
                     </div>
+                  </div>
+
+                  {/* EV Gated Roadmap Preview */}
+                  <div className="pt-2">
+                    <ComingSoonGate
+                      featureId="EV-010"
+                      title="Missions & Engineering Quests"
+                      description="Verified engineering bounties, collaborative sprint milestones, and peer-reviewed code challenges will activate in upcoming platform releases."
+                      targetMilestone="EV-010 Release"
+                    />
                   </div>
                 </div>
               )}

@@ -27,6 +27,8 @@ const ALLOWED_PROFILE_FIELDS = new Set([
   'portfolioUrl',
   'photoURL',
   'photoMetadata',
+  'isProfilePublic',
+  'isDnaPublic',
 ]);
 
 let _firestoreDb = null;
@@ -93,6 +95,20 @@ export function getFirestoreInstance() {
 }
 
 /**
+ * Checks whether Firestore is configured with project ID or test repository
+ */
+export function isFirestoreConfigured() {
+  if (_testRepository) return true;
+  const projectId = (
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    config.firebaseAdmin?.projectId ||
+    ''
+  ).trim();
+  return Boolean(projectId);
+}
+
+/**
  * Allows injecting an isolated Firestore repository for testing failure modes and contracts
  */
 export function setTestFirestoreRepository(repo) {
@@ -119,6 +135,8 @@ export function sanitizeUserDocument(docData) {
     portfolioUrl,
     photoURL,
     photoMetadata,
+    isProfilePublic,
+    isDnaPublic,
     role,
     isAdmin,
     status,
@@ -147,6 +165,8 @@ export function sanitizeUserDocument(docData) {
     portfolioUrl: portfolioUrl || '',
     photoURL: photoURL || null,
     photoMetadata: photoMetadata || null,
+    isProfilePublic: isProfilePublic !== undefined ? Boolean(isProfilePublic) : true,
+    isDnaPublic: isDnaPublic !== undefined ? Boolean(isDnaPublic) : true,
     role: role === 'admin' ? 'admin' : 'member',
     isAdmin: Boolean(isAdmin),
     status: status || 'active',
@@ -492,6 +512,10 @@ export async function updateUserProfile(uid, rawUpdates) {
         cleanUpdates.photoURL = val ? String(val).trim() : null;
       } else if (key === 'photoMetadata') {
         cleanUpdates.photoMetadata = val && typeof val === 'object' ? val : null;
+      } else if (key === 'isProfilePublic') {
+        cleanUpdates.isProfilePublic = Boolean(val);
+      } else if (key === 'isDnaPublic') {
+        cleanUpdates.isDnaPublic = Boolean(val);
       }
     }
 
@@ -795,18 +819,54 @@ export async function deleteUser(uid) {
 
 /**
  * Logs an administrative or security audit action into Firestore
+ * Strict audit schema representation: who, what, when, why, target, before, after, details.
  */
-export async function logAudit({ action, actorId, targetUid = null, details = {} }) {
+export async function logAudit({
+  action,
+  actorId,
+  actorEmail = null,
+  actorRole = 'admin',
+  targetUid = null,
+  targetResource = null,
+  targetId = null,
+  reason = null,
+  before = null,
+  after = null,
+  details = {},
+}) {
   try {
     const db = getFirestoreInstance();
     const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const nowIso = new Date().toISOString();
     const record = {
       id: auditId,
-      action,
+      // Who performed the action
+      who: {
+        uid: String(actorId),
+        email: actorEmail || null,
+        role: actorRole || 'admin',
+      },
       actorId: String(actorId),
+      // What action was taken
+      what: String(action),
+      action: String(action),
+      // When it occurred
+      when: nowIso,
+      timestamp: nowIso,
+      // Why it was taken
+      why: reason || details?.reason || 'Administrative or moderation action',
+      // Target entity
+      target: {
+        uid: targetUid ? String(targetUid) : null,
+        resource: targetResource ? String(targetResource) : null,
+        id: targetId ? String(targetId) : null,
+      },
       targetUid: targetUid ? String(targetUid) : null,
+      // Before / After state representations
+      before: before !== undefined ? before : null,
+      after: after !== undefined ? after : null,
+      // Extensible metadata
       details: details || {},
-      timestamp: new Date().toISOString(),
     };
     await db.collection('auditLogs').doc(auditId).set(record);
     return record;

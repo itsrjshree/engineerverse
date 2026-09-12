@@ -178,7 +178,7 @@ router.get('/:id', async (req, res) => {
  * PUT /api/problems/:id
  * Edit an existing problem. Author or Admin only.
  */
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireVerifiedIdentity, async (req, res) => {
   const { title, category, description, affectedUsers, tags } = req.body;
 
   try {
@@ -202,7 +202,7 @@ router.put('/:id', requireAuth, async (req, res) => {
  * DELETE /api/problems/:id
  * Delete a problem. Author or Admin only.
  */
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireVerifiedIdentity, async (req, res) => {
   try {
     const result = await firestoreProblemsService.deleteProblem(req.params.id, req.user);
 
@@ -220,7 +220,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
  * PATCH /api/problems/:id/resolve
  * Mark a problem as Resolved or Active. Author or Admin only.
  */
-router.patch('/:id/resolve', requireAuth, async (req, res) => {
+router.patch('/:id/resolve', requireVerifiedIdentity, async (req, res) => {
   const { isResolved } = req.body;
   try {
     const result = await firestoreProblemsService.toggleResolveProblem(req.params.id, req.user, isResolved);
@@ -237,10 +237,10 @@ router.patch('/:id/resolve', requireAuth, async (req, res) => {
 
 /**
  * POST /api/problems/:id/support
- * Toggle support (upvote/remove upvote) by authenticated user.
+ * Toggle support (upvote/remove upvote) by authenticated, verified user.
  * Prevents double-voting and eliminates fake metrics.
  */
-router.post('/:id/support', requireAuth, async (req, res) => {
+router.post('/:id/support', requireVerifiedIdentity, async (req, res) => {
   try {
     const result = await firestoreProblemsService.toggleSupport(req.params.id, req.user);
 

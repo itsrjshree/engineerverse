@@ -20,6 +20,13 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const AUDIT_FILE = path.join(DATA_DIR, 'audit.json');
 
 function makeThenable(syncData, asyncPromise) {
+  if (Array.isArray(syncData)) {
+    const arr = [...syncData];
+    arr.then = (onFulfilled, onRejected) => asyncPromise.then(onFulfilled, onRejected);
+    arr.catch = (onRejected) => asyncPromise.catch(onRejected);
+    arr.finally = (onFinally) => asyncPromise.finally(onFinally);
+    return arr;
+  }
   const target = syncData ? { ...syncData } : {};
   return Object.assign(Object.create(target), target, {
     then(onFulfilled, onRejected) {
@@ -45,6 +52,12 @@ class UsersStore {
   }
 
   _loadInitialFixtures() {
+    // In production, strictly bypass local disk fixtures entirely.
+    // Firestore is the sole authoritative persistence layer.
+    if (process.env.NODE_ENV === 'production') {
+      return;
+    }
+
     try {
       if (fs.existsSync(USERS_FILE)) {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
@@ -129,6 +142,19 @@ class UsersStore {
     }
   }
 
+  _saveToDisk() {
+    if (process.env.NODE_ENV === 'production') return;
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      const list = Array.from(this.usersById.values());
+      fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      // Non-fatal local cache write
+    }
+  }
+
   /**
    * Reconciles or gets user. Authoritative in Firestore.
    * In production, strictly throws on Firestore failure (no local storage fallback).
@@ -195,6 +221,8 @@ class UsersStore {
         bio: userObj.bio || '',
         discipline: userObj.discipline || 'Full Stack Systems',
         portfolioUrl: userObj.portfolioUrl || '',
+        isProfilePublic: userObj.isProfilePublic !== undefined ? Boolean(userObj.isProfilePublic) : true,
+        isDnaPublic: userObj.isDnaPublic !== undefined ? Boolean(userObj.isDnaPublic) : true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
@@ -202,6 +230,8 @@ class UsersStore {
       this.usersById.set(finalUid, syncRecord);
       if (email) this.emailToUid.set(email, finalUid);
     }
+
+    this._saveToDisk();
 
     // Async promise that writes to Firestore
     const asyncPromise = firestoreService
@@ -253,18 +283,22 @@ class UsersStore {
     }
 
     // Update remaining whitelisted fields
-    const { displayName, bio, discipline, portfolioUrl } = updates;
+    const { displayName, bio, discipline, portfolioUrl, isProfilePublic, isDnaPublic } = updates;
     if (
       displayName !== undefined ||
       bio !== undefined ||
       discipline !== undefined ||
-      portfolioUrl !== undefined
+      portfolioUrl !== undefined ||
+      isProfilePublic !== undefined ||
+      isDnaPublic !== undefined
     ) {
       updatedUser = await firestoreService.updateUserProfile(uid, {
         displayName,
         bio,
         discipline,
         portfolioUrl,
+        isProfilePublic,
+        isDnaPublic,
       });
     }
 
@@ -383,19 +417,58 @@ class UsersStore {
     return makeThenable(mem, asyncPromise);
   }
 
-  logAudit({ action, actorId, targetUid = null, details = {} }) {
-    const logItem = {
-      id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+  logAudit(auditData) {
+    const {
       action,
+      actorId,
+      actorEmail = null,
+      actorRole = 'admin',
+      targetUid = null,
+      targetResource = null,
+      targetId = null,
+      reason = null,
+      before = null,
+      after = null,
+      details = {},
+    } = auditData || {};
+
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const nowIso = new Date().toISOString();
+    const logItem = {
+      id: auditId,
+      who: {
+        uid: String(actorId),
+        email: actorEmail || null,
+        role: actorRole || 'admin',
+      },
       actorId: String(actorId),
+      what: String(action),
+      action: String(action),
+      when: nowIso,
+      timestamp: nowIso,
+      why: reason || details?.reason || 'Administrative or moderation action',
+      target: {
+        uid: targetUid ? String(targetUid) : null,
+        resource: targetResource ? String(targetResource) : null,
+        id: targetId ? String(targetId) : null,
+      },
       targetUid: targetUid ? String(targetUid) : null,
+      before: before !== undefined ? before : null,
+      after: after !== undefined ? after : null,
       details: details || {},
-      timestamp: new Date().toISOString(),
     };
+
     this.auditLogs.unshift(logItem);
     if (this.auditLogs.length > 500) this.auditLogs.pop();
-    firestoreService.logAudit(logItem).catch(() => {});
-    return logItem;
+
+    const asyncPromise = firestoreService.logAudit(logItem).catch((err) => {
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+      return logItem;
+    });
+
+    return makeThenable(logItem, asyncPromise);
   }
 
   incrementProblemsCount(uid) {

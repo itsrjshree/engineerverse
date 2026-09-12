@@ -30,10 +30,11 @@ import {
   Rocket,
   MessageSquare,
   Bot,
+  Bell,
 } from 'lucide-react';
 import { Badge } from './ui/Badge.jsx';
 import { authService, AUTHORIZED_ADMIN_EMAIL } from '../services/firebaseClient.js';
-import { resolveAvatarUrl } from '../config/api.js';
+import { resolveAvatarUrl, apiFetch } from '../config/api.js';
 import { AuthModal } from './auth/AuthModal.jsx';
 
 export function Header({ activeSection, onNavigate, campaignState, currentUser: propUser }) {
@@ -42,6 +43,7 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
   const [currentUser, setCurrentUser] = useState(propUser || null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const profileMenuRef = useRef(null);
   const mobileDrawerRef = useRef(null);
@@ -72,6 +74,30 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
     });
     return () => unsubscribe();
   }, []);
+
+  // Poll unread notification count when user is logged in
+  useEffect(() => {
+    if (!currentUser || currentUser.isAnonymous) {
+      setUnreadNotifications(0);
+      return;
+    }
+
+    const checkNotifications = async () => {
+      try {
+        const res = await apiFetch('/api/notifications');
+        if (res.ok) {
+          const data = await res.json();
+          setUnreadNotifications(data.unreadCount || 0);
+        }
+      } catch (err) {
+        // Silent catch for notification badge
+      }
+    };
+
+    checkNotifications();
+    const interval = setInterval(checkNotifications, 45000);
+    return () => clearInterval(interval);
+  }, [currentUser?.uid]);
 
   // Lock body scroll when mobile menu is open
   useEffect(() => {
@@ -246,10 +272,15 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
                 <button
                   type="button"
                   onClick={() => handleNavClick('dashboard')}
-                  className="p-2.5 rounded-xl bg-purple-950/60 border border-purple-800/50 text-xs font-medium text-purple-200 hover:text-white flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  className="p-2.5 rounded-xl bg-purple-950/60 border border-purple-800/50 text-xs font-medium text-purple-200 hover:text-white flex items-center justify-center gap-1.5 transition cursor-pointer relative"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5 text-purple-400" />
                   <span>Dashboard</span>
+                  {unreadNotifications > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-purple-500 text-[10px] font-bold text-white leading-tight">
+                      {unreadNotifications}
+                    </span>
+                  )}
                 </button>
 
                 <button
@@ -423,6 +454,24 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
             <span>Shree Labs</span>
           </a>
 
+          {/* Notifications Trigger Button */}
+          {currentUser && !currentUser.isAnonymous && (
+            <button
+              type="button"
+              onClick={() => handleNavClick('dashboard')}
+              className="relative p-2 rounded-full text-slate-300 hover:text-white hover:bg-white/5 transition cursor-pointer"
+              title={unreadNotifications > 0 ? `${unreadNotifications} unread notifications` : 'Notifications'}
+              aria-label="Notifications"
+            >
+              <Bell className="w-5 h-5 text-purple-300" />
+              {unreadNotifications > 0 && (
+                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-[#050510]">
+                  {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Profile Icon ONLY in Navbar (User Name & details shown ONLY on click) */}
           {currentUser && !currentUser.isAnonymous ? (
             <div className="relative" ref={profileMenuRef}>
@@ -496,10 +545,17 @@ export function Header({ activeSection, onNavigate, campaignState, currentUser: 
                     <button
                       type="button"
                       onClick={() => handleNavClick('dashboard')}
-                      className="w-full px-3 py-2.5 rounded-xl text-left text-slate-200 hover:text-white hover:bg-purple-950/60 flex items-center gap-2.5 transition cursor-pointer"
+                      className="w-full px-3 py-2.5 rounded-xl text-left text-slate-200 hover:text-white hover:bg-purple-950/60 flex items-center justify-between transition cursor-pointer"
                     >
-                      <LayoutDashboard className="w-4 h-4 text-purple-400" />
-                      <span className="font-medium">My Engineer Dashboard</span>
+                      <div className="flex items-center gap-2.5">
+                        <LayoutDashboard className="w-4 h-4 text-purple-400" />
+                        <span className="font-medium">My Engineer Dashboard</span>
+                      </div>
+                      {unreadNotifications > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-purple-500 text-[10px] font-bold text-white leading-tight">
+                          {unreadNotifications} new
+                        </span>
+                      )}
                     </button>
 
                     {isAdmin && (

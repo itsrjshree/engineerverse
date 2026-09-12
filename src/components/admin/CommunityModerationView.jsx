@@ -57,6 +57,39 @@ export function CommunityModerationView() {
   const [creditUser, setCreditUser] = useState(null);
   const [newCreditsAmount, setNewCreditsAmount] = useState(5);
 
+  // Database Reconciliation State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncReport, setSyncReport] = useState(null);
+
+  const handleSyncDatabase = async () => {
+    setIsSyncing(true);
+    setFeedback(null);
+    try {
+      const res = await apiFetch('/api/admin/sync-database', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSyncReport(data.report);
+        const uRep = data.report?.users || {};
+        setFeedback({
+          type: 'success',
+          text: `Database reconciled: ${uRep.scanned || 0} users checked, ${uRep.created || 0} created, ${uRep.alreadySynced || 0} synced. Problems verified.`,
+        });
+        await loadData();
+      } else {
+        setFeedback({
+          type: 'error',
+          text: data.error || data.report?.users?.fatalError || 'Database sync encountered an issue.',
+        });
+      }
+    } catch (err) {
+      setFeedback({ type: 'error', text: `Sync error: ${err.message}` });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -314,11 +347,86 @@ export function CommunityModerationView() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" icon={RefreshCw} onClick={loadData}>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={isSyncing ? Loader2 : RefreshCw}
+            disabled={isSyncing || loading}
+            onClick={handleSyncDatabase}
+            className={`${isSyncing ? 'animate-pulse' : ''} bg-purple-600 hover:bg-purple-500`}
+          >
+            {isSyncing ? 'Reconciling Database...' : 'Sync Database'}
+          </Button>
+          <Button variant="outline" size="sm" icon={RefreshCw} onClick={loadData} disabled={loading || isSyncing}>
             Refresh
           </Button>
         </div>
       </div>
+
+      {/* Database Reconciliation Report Card */}
+      {syncReport && (
+        <Card className="p-5 bg-purple-950/40 border-purple-800/60 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              <h3 className="text-sm font-bold text-white">Database Integrity & Reconciliation Audit</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncReport(null)}
+              className="text-xs text-slate-400 hover:text-white cursor-pointer px-2 py-1 rounded bg-black/40 border border-purple-900/50"
+            >
+              Dismiss Report
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 bg-black/40 rounded-xl border border-purple-900/40">
+              <div className="text-slate-400">Users Scanned</div>
+              <div className="text-lg font-bold text-white">{syncReport.users?.scanned ?? 0}</div>
+              <div className="text-[10px] text-purple-300">
+                Created: {syncReport.users?.created ?? 0} · Synced: {syncReport.users?.alreadySynced ?? 0}
+              </div>
+            </div>
+
+            <div className="p-3 bg-black/40 rounded-xl border border-purple-900/40">
+              <div className="text-slate-400">Problems Verified</div>
+              <div className="text-lg font-bold text-white">{syncReport.problems?.scanned ?? 0}</div>
+              <div className="text-[10px] text-purple-300">
+                Repairs: {(syncReport.problems?.repairedSupporters || 0) + (syncReport.problems?.repairedSolutions || 0)}
+              </div>
+            </div>
+
+            <div className="p-3 bg-black/40 rounded-xl border border-purple-900/40">
+              <div className="text-slate-400">Total Solutions</div>
+              <div className="text-lg font-bold text-white">{syncReport.counters?.counters?.totalSolutions ?? 0}</div>
+              <div className="text-[10px] text-purple-300">Authored Proposals</div>
+            </div>
+
+            <div className="p-3 bg-black/40 rounded-xl border border-purple-900/40">
+              <div className="text-slate-400">Total Supports</div>
+              <div className="text-lg font-bold text-white">{syncReport.counters?.counters?.totalSupports ?? 0}</div>
+              <div className="text-[10px] text-purple-300">Community Backing</div>
+            </div>
+          </div>
+
+          {syncReport.users?.duplicateEmailsDetected?.length > 0 && (
+            <div className="p-3 bg-amber-950/40 rounded-xl border border-amber-800/60 text-xs text-amber-200">
+              <span className="font-bold">Duplicate Emails Detected:</span> {syncReport.users.duplicateEmailsDetected.map(d => d.email).join(', ')}
+            </div>
+          )}
+
+          {syncReport.users?.orphanedFirestoreUsers?.length > 0 && (
+            <div className="p-3 bg-purple-950/40 rounded-xl border border-purple-800/60 text-xs text-purple-200">
+              <span className="font-bold">Orphaned Records (Firestore docs with no Auth record):</span> {syncReport.users.orphanedFirestoreUsers.length}
+            </div>
+          )}
+
+          <div className="text-[11px] text-slate-400">
+            Audit completed in <strong className="text-white">{syncReport.totalDurationMs || 0}ms</strong> at {new Date(syncReport.finishedAt).toLocaleTimeString()}. All operations executed with ACID guarantees.
+          </div>
+        </Card>
+      )}
 
       {feedback && (
         <div

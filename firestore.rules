@@ -165,7 +165,18 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // 10. Administrative Audit Logs & Moderation
+    // 10. Media Registry & Assets
+    match /mediaAssets/{assetId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /mediaRegistry/{sha256} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 11. Administrative Audit Logs & Moderation
     match /auditLogs/{logId} {
       allow read: if isAdmin();
       allow write: if isAdmin();

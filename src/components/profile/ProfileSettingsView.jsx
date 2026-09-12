@@ -37,6 +37,8 @@ import {
   Image as ImageIcon,
   RefreshCw,
   AlertCircle,
+  Eye,
+  Lock,
 } from 'lucide-react';
 import { Badge } from '../ui/Badge.jsx';
 import { Button } from '../ui/Button.jsx';
@@ -73,6 +75,8 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
   const [discipline, setDiscipline] = useState('Full Stack Systems');
   const [portfolioUrl, setPortfolioUrl] = useState('');
   const [photoURL, setPhotoURL] = useState('');
+  const [isProfilePublic, setIsProfilePublic] = useState(true);
+  const [isDnaPublic, setIsDnaPublic] = useState(true);
   const [photoError, setPhotoError] = useState(false);
   const [avatarTheme, setAvatarTheme] = useState('purple');
   const [activeSubTab, setActiveSubTab] = useState('identity');
@@ -254,6 +258,8 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
       setDiscipline(propUser.discipline || 'Full Stack Systems');
       setPortfolioUrl(propUser.portfolioUrl || '');
       setPhotoURL(propUser.photoURL || '');
+      setIsProfilePublic(propUser.isProfilePublic !== undefined ? Boolean(propUser.isProfilePublic) : true);
+      setIsDnaPublic(propUser.isDnaPublic !== undefined ? Boolean(propUser.isDnaPublic) : true);
       const savedTheme = localStorage.getItem(`ev_user_avatar_theme_${propUser.uid || propUser.email}`);
       if (savedTheme) setAvatarTheme(savedTheme);
     } else {
@@ -265,6 +271,8 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
           setDiscipline(active.discipline || 'Full Stack Systems');
           setPortfolioUrl(active.portfolioUrl || '');
           setPhotoURL(active.photoURL || '');
+          setIsProfilePublic(active.isProfilePublic !== undefined ? Boolean(active.isProfilePublic) : true);
+          setIsDnaPublic(active.isDnaPublic !== undefined ? Boolean(active.isDnaPublic) : true);
           const savedTheme = localStorage.getItem(`ev_user_avatar_theme_${active.uid || active.email}`);
           if (savedTheme) setAvatarTheme(savedTheme);
         }
@@ -302,6 +310,8 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
         discipline,
         portfolioUrl: portfolioUrl.trim(),
         photoURL: photoURL.trim(),
+        isProfilePublic,
+        isDnaPublic,
       });
 
       if (result.success) {
@@ -1014,6 +1024,93 @@ export function ProfileSettingsView({ onNavigate, currentUser: propUser }) {
                 <div className="text-xs text-slate-400">Connection Credits</div>
                 <div className="text-sm font-bold text-amber-300 font-mono">
                   {displayCredits} Available
+                </div>
+              </div>
+            </div>
+
+            {/* Privacy & Visibility Preferences */}
+            <div className="p-5 rounded-2xl bg-[#090920] border border-purple-900/50 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-bold text-white">
+                  <Eye className="w-4 h-4 text-purple-400" />
+                  <span>Privacy & Community Visibility Controls</span>
+                </div>
+                <span className="text-[11px] text-purple-300/80 font-mono">GDPR & Privacy-by-Design</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Public Profile Toggle */}
+                <div className="p-4 rounded-xl bg-[#060614] border border-purple-950/60 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                      {isProfilePublic ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-amber-400" />}
+                      <span>Public Engineer Profile</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      {isProfilePublic
+                        ? 'Visible to community members in discussions and solutions.'
+                        : 'Profile details hidden from public community directory.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isProfilePublic;
+                      setIsProfilePublic(next);
+                      authService.updateUserProfile({ isProfilePublic: next }).then((res) => {
+                        if (res.success) {
+                          setSuccessToast(`Public profile visibility set to ${next ? 'Public' : 'Private'}.`);
+                          setTimeout(() => setSuccessToast(''), 3000);
+                        }
+                      });
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      isProfilePublic ? 'bg-purple-600' : 'bg-slate-800'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        isProfilePublic ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Public DNA Result Toggle */}
+                <div className="p-4 rounded-xl bg-[#060614] border border-purple-950/60 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                      {isDnaPublic ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-amber-400" />}
+                      <span>Share DNA Assessment</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      {isDnaPublic
+                        ? 'Your archetype badge is visible on your problem cards.'
+                        : 'Your Engineering DNA archetype remains confidential.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isDnaPublic;
+                      setIsDnaPublic(next);
+                      authService.updateUserProfile({ isDnaPublic: next }).then((res) => {
+                        if (res.success) {
+                          setSuccessToast(`Engineering DNA sharing set to ${next ? 'Shared' : 'Private'}.`);
+                          setTimeout(() => setSuccessToast(''), 3000);
+                        }
+                      });
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      isDnaPublic ? 'bg-purple-600' : 'bg-slate-800'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        isDnaPublic ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
                 </div>
               </div>
             </div>

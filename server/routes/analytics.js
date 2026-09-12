@@ -10,7 +10,7 @@ import { analyticsStore } from '../services/analyticsStore.js';
 const router = Router();
 
 // Ingest single analytics event
-router.post('/event', (req, res) => {
+router.post('/event', async (req, res) => {
   try {
     let payload = req.body;
 
@@ -24,7 +24,7 @@ router.post('/event', (req, res) => {
     }
 
     if (payload && typeof payload === 'object') {
-      analyticsStore.recordEvent(payload);
+      await analyticsStore.recordEvent(payload);
     }
 
     res.status(200).json({ success: true, recorded: true });
@@ -34,7 +34,7 @@ router.post('/event', (req, res) => {
 });
 
 // Ingest batch analytics events
-router.post('/batch', (req, res) => {
+router.post('/batch', async (req, res) => {
   try {
     let events = req.body;
     if (typeof events === 'string') {
@@ -47,7 +47,7 @@ router.post('/batch', (req, res) => {
 
     if (Array.isArray(events)) {
       for (const ev of events) {
-        analyticsStore.recordEvent(ev);
+        await analyticsStore.recordEvent(ev);
       }
     }
 
@@ -58,10 +58,11 @@ router.post('/batch', (req, res) => {
 });
 
 // Aggregate stats (public summary, zero PII)
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
+  const metrics = await analyticsStore.getMetrics();
   res.json({
     success: true,
-    metrics: analyticsStore.getMetrics(),
+    metrics,
   });
 });
 

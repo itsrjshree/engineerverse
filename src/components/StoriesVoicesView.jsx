@@ -4,7 +4,7 @@
  * Fully public-facing, inspiring, zero internal EV numbers.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from './ui/Card.jsx';
 import { Badge } from './ui/Badge.jsx';
 import { Button } from './ui/Button.jsx';
@@ -19,6 +19,7 @@ import {
   Download,
   Shield,
   Sparkles,
+  ThumbsUp,
 } from 'lucide-react';
 import { BRAND_CONFIG } from '../config/branding.js';
 import {
@@ -28,6 +29,9 @@ import {
   downloadArtifactAsSvg,
   ARTIFACT_TYPES,
 } from '../services/artifacts.js';
+import { apiFetch } from '../config/api.js';
+import { authService } from '../services/firebaseClient.js';
+import { ComingSoonGate } from './ui/ComingSoonGate.jsx';
 
 const INSPIRING_STORIES = [
   {
@@ -72,11 +76,72 @@ I will never weaponize complexity, nor obscure truth behind technical jargon.
 In the spirit of builders who walked before me, I pledge to turn chaos into order for generations yet unborn.`;
 
 export function StoriesVoicesView() {
+  const [stories, setStories] = useState(INSPIRING_STORIES);
   const [activeTab, setActiveTab] = useState('stories'); // 'stories' | 'oath'
   const [signName, setSignName] = useState('');
   const [hasSignedOath, setHasSignedOath] = useState(false);
   const [oathPublicId, setOathPublicId] = useState(null);
   const [copiedNotice, setCopiedNotice] = useState('');
+  const [upvotingStoryId, setUpvotingStoryId] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    apiFetch('/api/stories')
+      .then((data) => {
+        if (isMounted && data?.stories && Array.isArray(data.stories) && data.stories.length > 0) {
+          // Merge API stories with title/story fallbacks
+          const merged = data.stories.map((s, idx) => {
+            const fallback = INSPIRING_STORIES[idx % INSPIRING_STORIES.length];
+            return {
+              ...fallback,
+              ...s,
+              title: s.title || fallback?.title || `Engineering Journey #${idx + 1}`,
+              subtitle: s.author || s.subtitle || fallback?.subtitle || 'Community Engineer',
+              role: s.discipline || s.role || fallback?.role || 'Systems Builder',
+              category: s.category || fallback?.category || 'Legacy & Integrity',
+              quote: s.quote || fallback?.quote,
+              story: s.story || fallback?.story || s.quote,
+            };
+          });
+          setStories(merged);
+        }
+      })
+      .catch((err) => {
+        console.warn('[StoriesView] Using local fallback stories:', err.message);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleUpvoteStory = async (storyId) => {
+    const token = await authService.getIdToken();
+    if (!token) return;
+    setUpvotingStoryId(storyId);
+    try {
+      const res = await fetch(`/api/stories/${storyId}/upvote`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStories((prev) =>
+          prev.map((s) =>
+            s.id === storyId
+              ? { ...s, upvotes: data.upvotes ?? (s.upvotes || 0) + 1, hasUpvoted: data.hasUpvoted ?? true }
+              : s
+          )
+        );
+      }
+    } catch (err) {
+      console.warn('[StoriesView] Error upvoting:', err.message);
+    } finally {
+      setUpvotingStoryId(null);
+    };
+  };
 
   const handleSignOath = (e) => {
     e.preventDefault();
@@ -150,7 +215,7 @@ export function StoriesVoicesView() {
       {/* Tab 1: Stories */}
       {activeTab === 'stories' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {INSPIRING_STORIES.map((story) => (
+          {stories.map((story) => (
             <Card key={story.id} className="p-6 flex flex-col justify-between space-y-4">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -178,8 +243,22 @@ export function StoriesVoicesView() {
                 </p>
               </div>
 
-              <div className="pt-3 border-t border-purple-950/40 text-[11px] text-purple-400/80 font-mono">
-                {BRAND_CONFIG.platformName} Archive
+              <div className="pt-3 border-t border-purple-950/40 flex items-center justify-between text-[11px] text-purple-400/80 font-mono">
+                <span>{BRAND_CONFIG.platformName} Archive</span>
+                <button
+                  type="button"
+                  onClick={() => handleUpvoteStory(story.id)}
+                  disabled={upvotingStoryId === story.id}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
+                    story.hasUpvoted
+                      ? 'bg-purple-900/60 text-purple-200 border border-purple-600/50'
+                      : 'bg-purple-950/40 hover:bg-purple-900/40 text-purple-300'
+                  }`}
+                  title="Upvote inspiring engineering story"
+                >
+                  <ThumbsUp className="w-3.5 h-3.5" />
+                  <span>{story.upvotes || 0}</span>
+                </button>
               </div>
             </Card>
           ))}
@@ -284,6 +363,16 @@ export function StoriesVoicesView() {
           )}
         </div>
       )}
+
+      {/* Feature Gating: Audio Oral Histories & Verified Story Submissions */}
+      <div className="pt-6">
+        <ComingSoonGate
+          featureId="EV-020"
+          title="Oral Histories & Engineer Voices Audio Vault"
+          description="Community audio interviews, field recordings of grassroots engineering pioneers, and peer-verified narrative archives will activate in upcoming platform releases."
+          targetMilestone="EV-020 Pipeline"
+        />
+      </div>
     </div>
   );
 }

@@ -20,6 +20,8 @@ import pledgesRoutes from './routes/pledges.js';
 import priteeRoutes from './routes/pritee.js';
 import problemsRoutes from './routes/problems.js';
 import storiesRoutes from './routes/stories.js';
+import missionsRoutes from './routes/missions.js';
+import notificationsRoutes from './routes/notifications.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +51,8 @@ export function createServer() {
   app.use('/api/dna', dnaRoutes);
   app.use('/api/problems', problemsRoutes);
   app.use('/api/stories', storiesRoutes);
+  app.use('/api/missions', missionsRoutes);
+  app.use('/api/notifications', notificationsRoutes);
   app.use('/api/pledges', pledgesRoutes);
   app.use('/api/pritee', priteeRoutes);
   app.use('/api/media', mediaRoutes);

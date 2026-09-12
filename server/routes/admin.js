@@ -99,9 +99,13 @@ router.put('/problems/:id', requireAdmin, async (req, res) => {
 
   await usersStore.logAudit({
     action: 'ADMIN_UPDATE_PROBLEM',
-    problemId: req.params.id,
-    moderatorId: req.user.uid,
-    timestamp: new Date().toISOString(),
+    actorId: req.user.uid,
+    actorEmail: req.user.email,
+    actorRole: 'admin',
+    targetResource: 'problems',
+    targetId: req.params.id,
+    reason: req.body?.reason || 'Administrative content update',
+    after: { title, category, description, affectedUsers, tags },
   });
 
   res.json(result);
@@ -117,9 +121,12 @@ router.delete('/problems/:id', requireAdmin, async (req, res) => {
 
   await usersStore.logAudit({
     action: 'ADMIN_DELETE_PROBLEM',
-    problemId: req.params.id,
-    moderatorId: req.user.uid,
-    timestamp: new Date().toISOString(),
+    actorId: req.user.uid,
+    actorEmail: req.user.email,
+    actorRole: 'admin',
+    targetResource: 'problems',
+    targetId: req.params.id,
+    reason: req.body?.reason || 'Administrative problem deletion',
   });
 
   res.json(result);
@@ -136,11 +143,13 @@ router.patch('/problems/:id/status', requireAdmin, async (req, res) => {
 
   await usersStore.logAudit({
     action: 'ADMIN_STATUS_CHANGE',
-    problemId: req.params.id,
-    newStatus: status,
-    isResolved,
-    moderatorId: req.user.uid,
-    timestamp: new Date().toISOString(),
+    actorId: req.user.uid,
+    actorEmail: req.user.email,
+    actorRole: 'admin',
+    targetResource: 'problems',
+    targetId: req.params.id,
+    reason: req.body?.reason || 'Administrative lifecycle change',
+    after: { status, isResolved },
   });
 
   res.json(result);
@@ -252,19 +261,20 @@ router.get('/logs', requireAdmin, async (req, res) => {
   });
 });
 
-// Legacy moderation action endpoint for compatibility
-router.post('/moderation/:entityType/:id', requireAdmin, (req, res) => {
+// Moderation action endpoint
+router.post('/moderation/:entityType/:id', requireAdmin, async (req, res) => {
   const { entityType, id } = req.params;
   const { action, reason } = req.body;
 
-  usersStore.logAudit({
+  await usersStore.logAudit({
     action: `MODERATE_${entityType.toUpperCase()}`,
-    entityType,
-    entityId: id,
-    actionDetail: action,
+    actorId: req.user.uid,
+    actorEmail: req.user.email,
+    actorRole: 'admin',
+    targetResource: entityType,
+    targetId: id,
     reason: reason || 'Verified compliant with community engineering guidelines.',
-    moderatorId: req.user.uid,
-    timestamp: new Date().toISOString(),
+    details: { actionDetail: action },
   });
 
   res.json({

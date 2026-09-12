@@ -344,7 +344,7 @@ export const authService = {
     const currentUser = await this.getCurrentUser();
     if (!currentUser) return { success: false, error: 'User is not authenticated.' };
 
-    const { displayName, bio, discipline, photoURL, portfolioUrl } = updates;
+    const { displayName, bio, discipline, photoURL, portfolioUrl, isProfilePublic, isDnaPublic } = updates;
 
     // 1. Persist update on backend API FIRST (converts base64 dataUrls to permanent short URLs on server)
     const token = await this.getIdToken();
@@ -357,7 +357,7 @@ export const authService = {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ displayName, bio, discipline, photoURL, portfolioUrl }),
+          body: JSON.stringify({ displayName, bio, discipline, photoURL, portfolioUrl, isProfilePublic, isDnaPublic }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -411,6 +411,8 @@ export const authService = {
       discipline: discipline !== undefined ? discipline : (currentUser.discipline || 'Full Stack Systems'),
       photoURL: resolvedPhotoURL,
       portfolioUrl: portfolioUrl !== undefined ? portfolioUrl : (currentUser.portfolioUrl || ''),
+      isProfilePublic: isProfilePublic !== undefined ? Boolean(isProfilePublic) : (currentUser.isProfilePublic ?? true),
+      isDnaPublic: isDnaPublic !== undefined ? Boolean(isDnaPublic) : (currentUser.isDnaPublic ?? true),
       connectionCredits: serverUser?.connectionCredits ?? currentUser.connectionCredits ?? 5,
     };
 
