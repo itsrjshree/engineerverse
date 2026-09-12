@@ -187,6 +187,40 @@ router.get('/auth/me', async (req, res) => {
   });
 });
 
+// GET /auth/profile: Alias to /auth/me for standard profile retrieval
+router.get('/auth/profile', async (req, res) => {
+  const { verifyToken } = await import('../middleware/auth.js');
+  verifyToken(req, res, async () => {
+    if (!req.user || req.user.isAnonymous) {
+      return res.status(401).json({
+        success: false,
+        authenticated: false,
+        error: 'Authentication is required to access profile.',
+      });
+    }
+
+    try {
+      const { usersStore } = await import('../services/usersStore.js');
+      const storeUser = await usersStore.getOrCreateUser(req.user);
+
+      res.json({
+        success: true,
+        authenticated: true,
+        user: {
+          ...req.user,
+          ...storeUser,
+        },
+      });
+    } catch (err) {
+      res.status(err.status || 503).json({
+        success: false,
+        error: err.message || 'Database service unavailable.',
+        code: err.code || 'firestore/error',
+      });
+    }
+  });
+});
+
 // Update authenticated user profile endpoint
 router.put('/auth/profile', async (req, res) => {
   const { verifyToken } = await import('../middleware/auth.js');

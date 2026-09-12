@@ -20,6 +20,9 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 // production secret, so we set a test-only value here, matching the same
 // pattern already used in test-admin-auth.js and test-phase1-security.js.
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'a_very_secure_test_session_secret_with_more_than_32_characters';
+process.env.VITE_FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || 'AIzaSyDFcRRjBm3nM5bdplh8WmCS0yw50W7g_7s';
+process.env.VITE_FIREBASE_PROJECT_ID = process.env.VITE_FIREBASE_PROJECT_ID || 'engineerverse-6dda1';
+process.env.VITE_FIREBASE_AUTH_DOMAIN = process.env.VITE_FIREBASE_AUTH_DOMAIN || 'engineerverse-6dda1.firebaseapp.com';
 
 import { createServer } from '../server/index.js';
 import { normalizeFirebaseApiKey, isValidFirebaseApiKey } from '../src/services/firebaseClient.js';
